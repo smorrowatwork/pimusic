@@ -4,6 +4,8 @@ PiMusic turns a Raspberry Pi Zero 2 W into a headless, browser-controlled music 
 
 The interface supports search, playlists, album playback, queue reordering, Play Next, Append, Mix into Queue, Shuffle Upcoming, Wi-Fi setup, Bluetooth speaker selection, queue recovery, and persistent volume.
 
+For durable project context beyond setup and operation, see [architecture](docs/architecture.md), [hardware assumptions](docs/hardware.md), and [development history](docs/development-history.md). Contributors using Codex should start with [AGENTS.md](AGENTS.md).
+
 ## Quick Install
 
 These steps set up a fresh 64-bit Debian 13 (Trixie) or Raspberry Pi OS Pi Zero 2 W. Substitute `YOUR_USER`, your repository URL, and Navidrome values everywhere they appear.
