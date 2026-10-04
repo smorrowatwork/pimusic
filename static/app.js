@@ -1,0 +1,966 @@
+
+    const seek = document.getElementById("seek");
+    const volume = document.getElementById("volume");
+    const title = document.getElementById("title");
+    const artist = document.getElementById("artist");
+    const album = document.getElementById("album");
+    const upNext = document.getElementById("up-next");
+    const queueRuntime = document.getElementById("queue-runtime");
+
+const elapsedTime = document.getElementById("elapsed-time");
+const totalTime = document.getElementById("total-time");
+const coverArt = document.getElementById("coverArt");
+const playPauseButton = document.getElementById("playPauseButton");
+
+let lastCurrentSongId = null;
+let queueMovePending = false;
+let queueDrag = null;
+let queueLoadVersion = 0;
+let selectedWifiNetwork = null;
+let messageTimer = null;
+let playNextPending = false;
+
+function showError(error) {
+  const message = document.getElementById("app-message");
+  message.textContent = error?.message || "Something went wrong. Please try again.";
+  message.hidden = false;
+  clearTimeout(messageTimer);
+  messageTimer = setTimeout(() => { message.hidden = true; }, 6000);
+}
+
+async function apiJson(url, options) {
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch {
+    throw new Error("Unable to reach PiMusic. Check the network connection.");
+  }
+  const contentType = response.headers.get("content-type") || "";
+  const data = contentType.includes("application/json")
+    ? await response.json()
+    : { detail: await response.text() };
+  if (!response.ok) throw new Error(data.detail || "The request could not be completed.");
+  return data;
+}
+
+async function startPlayback(url) {
+  try {
+    await apiJson(url, { method: "POST" });
+    await refreshStatus();
+    await loadQueue();
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function playNextSong(songId) {
+  if (playNextPending) return;
+  playNextPending = true;
+  try {
+    await apiJson(`/api/player/play-next/${songId}`, { method: "POST" });
+    await refreshStatus();
+    await loadQueue();
+  } catch (error) {
+    showError(error);
+  } finally {
+    playNextPending = false;
+  }
+}
+
+async function addCollectionToQueue(mode, collection, collectionId) {
+  try {
+    await apiJson(`/api/player/queue/${mode}/${collection}/${collectionId}`, { method: "POST" });
+    await refreshStatus();
+    await loadQueue();
+  } catch (error) {
+    showError(error);
+  }
+}
+
+function appendCollectionActions(container, collection, collectionId, playUrl) {
+  const actions = document.createElement("div");
+  actions.className = "collection-actions";
+  for (const [label, action] of [
+    ["Play", () => startPlayback(playUrl)],
+    ["Append to Queue", () => addCollectionToQueue("append", collection, collectionId)],
+    ["Mix into Queue", () => addCollectionToQueue("mix", collection, collectionId)],
+  ]) {
+    const button = document.createElement("button");
+    button.textContent = label;
+    button.onclick = async () => {
+      button.disabled = true;
+      try { await action(); } finally { button.disabled = false; }
+    };
+    actions.appendChild(button);
+  }
+  container.appendChild(actions);
+}
+
+function appendSongRow(container, labelText, songId) {
+  const item = document.createElement("div");
+  item.className = "song-row";
+  item.onclick = () => startPlayback(`/api/player/play/${songId}`);
+
+  const label = document.createElement("span");
+  label.className = "song-row-label";
+  label.textContent = labelText;
+
+  const playNextButton = document.createElement("button");
+  playNextButton.className = "song-play-next";
+  playNextButton.textContent = "Play Next";
+  playNextButton.title = "Add after the current track";
+  playNextButton.onclick = async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    playNextButton.disabled = true;
+    try {
+      await playNextSong(songId);
+    } finally {
+      playNextButton.disabled = false;
+    }
+  };
+
+  item.append(label, playNextButton);
+  container.appendChild(item);
+}
+
+function toggleQueue() {
+  const card = document.getElementById("queue-card");
+  const button = document.getElementById("queueToggleButton");
+  const collapsed = card.classList.toggle("is-collapsed");
+  button.textContent = collapsed ? "Expand" : "Collapse";
+  button.setAttribute("aria-expanded", String(!collapsed));
+}
+
+function toggleSection(cardId, buttonId) {
+  const card = document.getElementById(cardId);
+  const button = document.getElementById(buttonId);
+  const collapsed = card.classList.toggle("is-collapsed");
+  button.textContent = collapsed ? "Expand" : "Collapse";
+  button.setAttribute("aria-expanded", String(!collapsed));
+}
+
+async function moveQueueItem(item, target, queueIds) {
+  if (queueMovePending || item.position === target) return;
+  queueMovePending = true;
+  const container = document.getElementById("queue");
+  container.classList.add("queue-busy");
+  try {
+    await apiJson(`/api/player/queue/${item.position}/move`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_position: target, queue_ids: queueIds })
+    });
+  } catch (error) {
+    showError(error);
+  } finally {
+    queueMovePending = false;
+    container.classList.remove("queue-busy");
+    await loadQueue();
+  }
+}
+
+function addQueueDrag(handle, row, item, queueIds) {
+  handle.onclick = event => event.stopPropagation();
+  handle.onpointerdown = event => {
+    if (event.button !== 0 || queueMovePending || queueDrag) return;
+    event.preventDefault();
+    event.stopPropagation();
+    handle.setPointerCapture(event.pointerId);
+    queueDrag = { pointerId: event.pointerId, target: item.position };
+    row.classList.add("queue-dragging");
+  };
+  handle.onpointermove = event => {
+    if (queueDrag?.pointerId !== event.pointerId) return;
+    const rows = [...document.querySelectorAll("#queue > div")];
+    let target = rows.findIndex(candidate => {
+      const rect = candidate.getBoundingClientRect();
+      return event.clientY < rect.top + rect.height / 2;
+    });
+    if (target < 0) target = rows.length;
+    if (target > item.position) target--;
+    queueDrag.target = target;
+    rows.forEach((candidate, index) => candidate.classList.toggle("queue-drop-target", index === target));
+    if (event.clientY < 60) window.scrollBy(0, -20);
+    if (event.clientY > window.innerHeight - 60) window.scrollBy(0, 20);
+  };
+  const finish = async event => {
+    if (queueDrag?.pointerId !== event.pointerId) return;
+    const target = queueDrag.target;
+    queueDrag = null;
+    document.querySelectorAll("#queue > div").forEach(candidate => {
+      candidate.classList.remove("queue-dragging", "queue-drop-target");
+    });
+    if (event.type === "pointerup") await moveQueueItem(item, target, queueIds);
+    await loadQueue();
+  };
+  handle.onpointerup = finish;
+  handle.onpointercancel = finish;
+  handle.onlostpointercapture = finish;
+}
+
+async function togglePlayPause() {
+  try {
+    const data = await apiJson("/api/status");
+    if (data.player.paused) {
+      await play();
+    } else {
+      await pause();
+    }
+    await refreshStatus();
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function refreshWifiStatus() {
+  const name = document.getElementById("wifi-name");
+  const status = document.getElementById("wifi-status");
+  const details = document.getElementById("wifi-details");
+  try {
+    const response = await fetch("/api/wifi/status");
+    const wifi = await response.json();
+    if (!response.ok) throw new Error(wifi.detail || "Unavailable");
+    if (!wifi.available) {
+      name.textContent = "No Wi-Fi adapter";
+      status.textContent = "Unavailable";
+      details.textContent = "";
+      return;
+    }
+    name.textContent = wifi.connection || wifi.device;
+    status.textContent = wifi.connected ? "Connected" : wifi.state;
+    details.textContent = wifi.ip_address ? `IP address: ${wifi.ip_address}` : "";
+  } catch (error) {
+    name.textContent = "Unavailable";
+    status.textContent = "Unknown";
+    details.textContent = "";
+  }
+}
+
+async function refreshSystemStatus() {
+  const container = document.getElementById("system-status");
+  try {
+    const data = await apiJson("/api/system/status");
+    container.textContent = [
+      `PiMusic ${data.version}`,
+      `MPV: ${data.mpv_available ? "Available" : "Unavailable"}`,
+      `Wi-Fi IP: ${data.wifi_ip || "Not connected"}`,
+      `Speaker: ${data.speaker || "None connected"}`,
+    ].join(" · ");
+  } catch (error) {
+    container.textContent = "System status unavailable.";
+  }
+}
+
+async function loadSavedWifiNetworks() {
+  const container = document.getElementById("wifi-saved-networks");
+  try {
+    const response = await fetch("/api/wifi/saved");
+    const data = await response.json();
+    if (!response.ok) throw new Error();
+    const connections = data.connections || [];
+    container.textContent = connections.length
+      ? `Saved networks: ${connections.map(connection => `${connection.name}${connection.autoconnect ? "" : " (manual)"}`).join(", ")}`
+      : "No saved Wi-Fi networks.";
+  } catch {
+    container.textContent = "Saved Wi-Fi networks unavailable.";
+  }
+}
+
+function selectWifiNetwork(network) {
+  selectedWifiNetwork = network;
+  document.getElementById("wifi-connect-form").style.display = "block";
+  document.getElementById("wifi-selected-network").textContent = `Connect to: ${network.ssid}`;
+  document.getElementById("wifi-password").value = "";
+  document.getElementById("wifi-password").placeholder = network.security === "Open" ? "No password required" : "Wi-Fi password";
+}
+
+function renderWifiNetworks(networks) {
+  const container = document.getElementById("wifi-network-list");
+  container.innerHTML = "";
+  if (!networks.length) {
+    container.textContent = "No Wi-Fi networks found.";
+    return;
+  }
+  for (const network of networks) {
+    const row = document.createElement("div");
+    const button = document.createElement("button");
+    button.className = "wifi-network";
+    button.textContent = `${network.ssid} — ${network.signal}%${network.active ? " — Connected" : ""}`;
+    button.onclick = () => selectWifiNetwork(network);
+    const security = document.createElement("span");
+    security.textContent = network.security;
+    row.append(button, security);
+    container.appendChild(row);
+  }
+}
+
+async function scanWifiNetworks() {
+  const scanStatus = document.getElementById("wifi-scan-status");
+  scanStatus.textContent = "Scanning…";
+  try {
+    const data = await apiJson("/api/wifi/scan", { method: "POST" });
+    renderWifiNetworks(data.networks);
+    scanStatus.textContent = "";
+  } catch (error) {
+    scanStatus.textContent = error.message || "Wi-Fi scan failed";
+    showError(error);
+  }
+}
+
+document.getElementById("wifi-connect-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const connectStatus = document.getElementById("wifi-connect-status");
+  if (!selectedWifiNetwork) {
+    connectStatus.textContent = "Choose a Wi-Fi network first.";
+    return;
+  }
+  connectStatus.textContent = "Connecting…";
+  try {
+    await apiJson("/api/wifi/connect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ssid: selectedWifiNetwork.ssid,
+        password: document.getElementById("wifi-password").value || null,
+      }),
+    });
+    connectStatus.textContent = "Connected.";
+    await refreshWifiStatus();
+  } catch (error) {
+    connectStatus.textContent = error.message || "Unable to connect";
+    showError(error);
+  }
+});
+
+function formatTime(seconds) {
+  if (!Number.isFinite(seconds)) {
+    return "0:00";
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+
+  return `${minutes}:${secs.toString().padStart(2, "0")}`;
+}
+
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "0m";
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.round((seconds % 3600) / 60);
+  return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
+async function cycleRepeat() {
+  try {
+    const data = await apiJson("/api/player/repeat", { method: "POST" });
+    updateRepeatButton(data.repeat);
+  } catch (error) {
+    showError(error);
+  }
+}
+
+function updateRepeatButton(mode) {
+  const button = document.getElementById("repeatButton");
+  const label = document.getElementById("repeatLabel");
+
+  button.classList.remove("active");
+
+  if (mode === "all") {
+    label.textContent = "All";
+    button.classList.add("active");
+  } else if (mode === "one") {
+    label.textContent = "One";
+    button.classList.add("active");
+  } else {
+    label.textContent = "Off";
+  }
+}
+
+async function refreshRepeat() {
+  const response = await fetch("/api/player/repeat");
+  const data = await response.json();
+
+  updateRepeatButton(data.repeat);
+}
+
+async function shuffleQueue() {
+  try {
+    const data = await apiJson("/api/player/shuffle", { method: "POST" });
+    updateShuffleButton(data.shuffle);
+    await loadQueue();
+  } catch (error) {
+    showError(error);
+  }
+}
+
+function updateShuffleButton(enabled) {
+  const button = document.getElementById("shuffleButton");
+
+  if (enabled) {
+    button.classList.add("active");
+  } else {
+    button.classList.remove("active");
+  }
+}
+
+async function refreshShuffle() {
+  const response = await fetch("/api/player/shuffle");
+  const data = await response.json();
+
+  updateShuffleButton(data.shuffle);
+}
+
+async function nextTrack() {
+  try {
+    await apiJson("/api/player/next", { method: "POST" });
+    refreshStatus();
+    loadQueue();
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function previousTrack() {
+  try {
+    await apiJson("/api/player/previous", { method: "POST" });
+    refreshStatus();
+    loadQueue();
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function clearQueue() {
+  const button = document.getElementById("clearQueueButton");
+  button.disabled = true;
+  try {
+    await apiJson("/api/player/queue", { method: "DELETE" });
+    updateShuffleButton(false);
+    await refreshStatus();
+  } catch (error) {
+    showError(error);
+  } finally {
+    await loadQueue();
+  }
+}
+
+async function loadQueue() {
+  if (queueDrag || queueMovePending) return;
+  const loadVersion = ++queueLoadVersion;
+  const response = await fetch("/api/player/queue");
+
+  if (!response.ok) {
+    console.error(await response.text());
+    return;
+  }
+
+  const data = await response.json();
+  if (loadVersion !== queueLoadVersion || queueDrag || queueMovePending) return;
+  const container = document.getElementById("queue");
+  document.getElementById("clearQueueButton").disabled = !data.queue?.length;
+
+  container.innerHTML = "";
+  await refreshShuffle();
+  if (loadVersion !== queueLoadVersion || queueDrag || queueMovePending) return;
+
+  if (!data.queue || data.queue.length === 0) {
+    container.textContent = "No queue loaded.";
+    return;
+  }
+
+  for (const item of data.queue) {
+    const row = document.createElement("div");
+    const queueIds = data.queue.map(entry => entry.mpv_id);
+    const handle = document.createElement("button");
+    handle.className = "queue-drag-handle";
+    handle.textContent = "⠿";
+    handle.title = "Drag to reorder";
+    handle.setAttribute("aria-label", "Drag to reorder track; use Up and Down keys to move");
+    handle.onkeydown = async event => {
+      const direction = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+      const target = item.position + direction;
+      if (!direction || target < 0 || target >= data.queue.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      await moveQueueItem(item, target, queueIds);
+    };
+    addQueueDrag(handle, row, item, queueIds);
+    row.appendChild(handle);
+
+    let text = `${item.position + 1}. ${item.title || "Unknown title"}`;
+
+    if (item.artist) {
+      text += ` — ${item.artist}`;
+    }
+
+    if (item.current) {
+      text = `▶ ${text}`;
+      row.style.fontWeight = "bold";
+    }
+
+    const label = document.createElement("span");
+    label.className = "queue-label";
+    label.textContent = text;
+    row.appendChild(label);
+
+    const actions = document.createElement("span");
+    actions.className = "queue-actions";
+    row.appendChild(actions);
+
+    const removeButton = document.createElement("button");
+    removeButton.className = "queue-remove";
+    removeButton.textContent = "×";
+    removeButton.title = "Remove from queue";
+    removeButton.setAttribute("aria-label", `Remove ${item.title || "track"} from queue`);
+    removeButton.onclick = async (event) => {
+      event.stopPropagation();
+      removeButton.disabled = true;
+      try {
+        await apiJson(
+          `/api/player/queue/${item.position}?mpv_id=${encodeURIComponent(item.mpv_id)}`,
+          { method: "DELETE" }
+        );
+        await refreshStatus();
+      } catch (error) {
+        showError(error);
+      } finally {
+        removeButton.disabled = false;
+        await loadQueue();
+      }
+    };
+    actions.appendChild(removeButton);
+    row.style.padding = "4px 0";
+    row.style.cursor = "pointer";
+
+    row.onclick = async () => {
+      try {
+        await apiJson(`/api/player/queue/${item.position}/play`, { method: "POST" });
+        await refreshStatus();
+        await loadQueue();
+      } catch (error) {
+        showError(error);
+      }
+    };
+
+    container.appendChild(row);
+  }
+}
+
+async function scanBluetoothDevices() {
+  const status = document.getElementById("bluetooth-scan-status");
+
+  status.textContent = "Scanning...";
+
+  try {
+    const data = await apiJson("/api/bluetooth/scan", { method: "POST" });
+    renderBluetoothDevices(data.devices || []);
+
+  } catch (error) {
+    status.textContent = error.message || "Scan failed";
+    showError(error);
+    return;
+  }
+
+  status.textContent = "";
+}
+
+
+async function loadBluetoothDevices() {
+  const response = await fetch("/api/bluetooth/devices");
+
+  if (!response.ok) {
+    console.error(await response.text());
+    return;
+  }
+
+  const data = await response.json();
+
+  renderBluetoothDevices(data.devices || []);
+}
+
+
+function renderBluetoothDevices(devices) {
+  const container = document.getElementById("bluetooth-device-list");
+  container.innerHTML = "";
+
+  if (devices.length === 0) {
+    container.textContent = "No Bluetooth devices found.";
+    return;
+  }
+
+  for (const device of devices) {
+    const row = document.createElement("div");
+
+    const label = document.createElement("span");
+
+    label.textContent =
+      `${device.name} (${device.address})` +
+      (device.connected ? " — Connected" : "");
+
+    const button = document.createElement("button");
+
+    if (!device.paired) {
+      button.textContent = "Pair";
+
+      button.onclick = async () => {
+        await pairBluetoothDevice(device.address);
+      };
+
+    } else if (device.connected) {
+      button.textContent = "Use";
+
+      button.onclick = async () => {
+        await connectBluetoothDevice(device.address);
+      };
+
+    } else {
+      button.textContent = "Connect";
+
+      button.onclick = async () => {
+        await connectBluetoothDevice(device.address);
+      };
+    }
+
+    row.appendChild(label);
+    row.appendChild(document.createTextNode(" "));
+    row.appendChild(button);
+
+    container.appendChild(row);
+  }
+}
+
+async function pairBluetoothDevice(address) {
+  try {
+    await apiJson("/api/bluetooth/pair-device", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address })
+    });
+    await refreshBluetoothStatus();
+    await loadBluetoothDevices();
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function connectBluetoothDevice(address) {
+  try {
+    await apiJson("/api/bluetooth/connect-device", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address })
+    });
+    await refreshBluetoothStatus();
+    await loadBluetoothDevices();
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function refreshBluetoothStatus() {
+  const response = await fetch("/api/bluetooth/status");
+  const data = await response.json();
+
+  document.getElementById("bluetooth-name").textContent =
+    data.name || data.address || "Unknown";
+
+  document.getElementById("bluetooth-status").textContent =
+    data.connected ? "Connected" : "Disconnected";
+}
+
+async function loadPlaylists() {
+  const response = await fetch("/api/library/playlists");
+  const data = await response.json();
+
+  const container = document.getElementById("playlists");
+  container.innerHTML = "";
+
+  for (const playlist of data.playlists) {
+    const item = document.createElement("div");
+
+    item.textContent =
+      `${playlist.name} (${playlist.songCount} songs)`;
+
+    item.style.padding = "8px 0";
+    item.style.cursor = "pointer";
+
+    item.onclick = () => loadPlaylist(playlist.id);
+
+    container.appendChild(item);
+  }
+}
+
+
+async function loadPlaylist(playlistId) {
+  const response = await fetch(`/api/library/playlists/${playlistId}`);
+  const playlist = await response.json();
+
+  const container = document.getElementById("playlists");
+  container.innerHTML = "";
+
+  const back = document.createElement("button");
+  back.textContent = "← Playlists";
+  back.onclick = loadPlaylists;
+  container.appendChild(back);
+
+  const heading = document.createElement("h2");
+  heading.textContent = playlist.name;
+  container.appendChild(heading);
+
+  appendCollectionActions(container, "playlist", playlistId, `/api/player/play-playlist/${playlistId}`);
+
+  for (const song of playlist.songs) {
+    appendSongRow(container, `${song.title} \u2014 ${song.artist || ""}`, song.id);
+  }
+}
+
+async function searchLibrary() {
+  const query = document.getElementById("searchBox").value.trim();
+  const container = document.getElementById("searchResults");
+
+  if (!query) {
+    container.innerHTML = "";
+    return;
+  }
+
+  container.innerHTML = "Searching...";
+
+  let data;
+  try {
+    data = await apiJson(`/api/library/search?q=${encodeURIComponent(query)}`);
+  } catch (error) {
+    container.textContent = error.message;
+    showError(error);
+    return;
+  }
+
+  container.innerHTML = "";
+
+  if (data.artists.length) {
+    const heading = document.createElement("h3");
+    heading.textContent = "Artists";
+    container.appendChild(heading);
+
+    for (const artist of data.artists) {
+      const item = document.createElement("div");
+      item.textContent = artist.name;
+      item.style.padding = "6px 0";
+      item.style.cursor = "pointer";
+
+      item.onclick = () => loadArtist(artist.id);
+
+      container.appendChild(item);
+    }
+  }
+
+  if (data.albums.length) {
+    const heading = document.createElement("h3");
+    heading.textContent = "Albums";
+    container.appendChild(heading);
+
+    for (const album of data.albums) {
+      const item = document.createElement("div");
+
+      item.textContent =
+        `${album.name} — ${album.artist || ""}`;
+
+      item.style.padding = "6px 0";
+      item.style.cursor = "pointer";
+
+      item.onclick = () => loadAlbum(album.id, null);
+
+      container.appendChild(item);
+    }
+  }
+
+  if (data.songs.length) {
+    const heading = document.createElement("h3");
+    heading.textContent = "Songs";
+    container.appendChild(heading);
+
+    for (const song of data.songs) {
+      appendSongRow(container, `${song.title} \u2014 ${song.artist || ""}`, song.id);
+    }
+  }
+}
+
+async function loadArtist(artistId) {
+  const response = await fetch(`/api/library/artists/${artistId}`);
+  const artist = await response.json();
+
+  const container = document.getElementById("searchResults");
+  container.innerHTML = "";
+
+  const back = document.createElement("button");
+  back.textContent = "← Search Results";
+  back.onclick = () => searchLibrary();
+  container.appendChild(back);
+
+  const heading = document.createElement("h2");
+  heading.textContent = artist.name;
+  container.appendChild(heading);
+
+  for (const album of artist.albums) {
+    const item = document.createElement("div");
+
+    let details = album.name;
+
+    if (album.year) {
+      details += ` (${album.year})`;
+    }
+
+    details += ` — ${album.songCount} song${album.songCount === 1 ? "" : "s"}`;
+
+    item.textContent = details;
+    item.style.padding = "8px 0";
+    item.style.cursor = "pointer";
+
+    item.addEventListener("click", () => {
+      loadAlbum(album.id, artist.id);
+    });
+
+    container.appendChild(item);
+  }
+}
+
+async function loadAlbum(albumId, artistId) {
+  const response = await fetch(`/api/library/albums/${albumId}`);
+  const album = await response.json();
+
+  const container = document.getElementById("searchResults");
+  container.innerHTML = "";
+
+  const back = document.createElement("button");
+  back.textContent = "← Search Results";
+  back.onclick = () => searchLibrary();
+  container.appendChild(back);
+
+  const heading = document.createElement("h2");
+  heading.textContent = album.name;
+  container.appendChild(heading);
+
+  appendCollectionActions(container, "album", albumId, `/api/player/play-album/${albumId}`);
+
+  const subheading = document.createElement("div");
+  subheading.textContent = album.artist || "";
+  container.appendChild(subheading);
+
+  for (const song of album.songs) {
+    appendSongRow(container, `${song.track ?? ""}. ${song.title}`, song.id);
+  }
+}
+
+    async function refreshStatus() {
+      const response = await fetch("/api/status");
+      const data = await response.json();
+      const player = data.player;
+
+      if (player.coverArt) {
+        const coverUrl = `/api/cover/${encodeURIComponent(player.coverArt)}`;
+        if (coverArt.getAttribute("src") !== coverUrl) {
+          coverArt.src = coverUrl;
+        }
+        coverArt.style.display = "block";
+      } else {
+        coverArt.removeAttribute("src");
+        coverArt.style.display = "none";
+      }
+
+     if (player.paused || player.idle) {
+       playPauseButton.textContent = "▶";
+       playPauseButton.title = "Play";
+     } else {
+       playPauseButton.textContent = "⏸";
+       playPauseButton.title = "Pause";
+     }
+
+      title.textContent = player.title || "Nothing playing";
+      artist.textContent = player.artist || "";
+      album.textContent = player.album || "";
+      const queue = data.queue || {};
+      upNext.textContent = queue.up_next
+        ? `Up next: ${queue.up_next.title || "Unknown title"}${queue.up_next.artist ? ` — ${queue.up_next.artist}` : ""}`
+        : "Up next: End of queue";
+      queueRuntime.textContent = queue.total_runtime
+        ? `${queue.tracks_remaining || 0} track${queue.tracks_remaining === 1 ? "" : "s"} after this · ${formatDuration(queue.remaining_runtime)} left · ${formatDuration(queue.total_runtime)} total`
+        : "";
+
+      const currentSongId = player.song_id || null;
+      
+      if (currentSongId !== lastCurrentSongId) {
+          lastCurrentSongId = currentSongId;
+          loadQueue();
+      }
+
+      const duration = player.idle ? 0 : (player.duration || 0);
+      const position = player.idle ? 0 : (player.position || 0);
+      seek.max = duration;
+      seek.value = position;
+      seek.disabled = duration <= 0;
+      elapsedTime.textContent = formatTime(position);
+      totalTime.textContent = formatTime(duration);
+
+      if (player.volume !== null) {
+        volume.value = player.volume;
+      }
+    }
+
+    async function play() {
+      try {
+        await apiJson("/api/player/play", { method: "POST" });
+        refreshStatus();
+      } catch (error) {
+        showError(error);
+      }
+    }
+
+    async function pause() {
+      try {
+        await apiJson("/api/player/pause", { method: "POST" });
+        refreshStatus();
+      } catch (error) {
+        showError(error);
+      }
+    }
+
+    seek.addEventListener("change", async () => {
+      try {
+        await apiJson("/api/player/seek", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ position: Number(seek.value) })
+        });
+      } catch (error) {
+        showError(error);
+      }
+    });
+
+    volume.addEventListener("change", async () => {
+      try {
+        await apiJson("/api/player/volume", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ volume: Number(volume.value) })
+        });
+      } catch (error) {
+        showError(error);
+      }
+    });
+
+    refreshStatus();
+    setInterval(refreshStatus, 1000);
+
+    loadPlaylists();
+
+    refreshBluetoothStatus();
+    loadBluetoothDevices();
+    refreshWifiStatus();
+    refreshSystemStatus();
+    loadSavedWifiNetworks();
+
+    refreshRepeat();
+    refreshShuffle();
+
+    loadQueue();
+

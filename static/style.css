@@ -1,0 +1,108 @@
+* { box-sizing: border-box; }
+
+body { margin: 0; padding: 24px; min-height: 100vh; background: radial-gradient(circle at top left, #2a1745 0%, transparent 35%), radial-gradient(circle at top right, #10243e 0%, transparent 35%), #0d0f14; color: #f4f4f6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+body > * { max-width: 900px; margin-left: auto; margin-right: auto; }
+h1 { margin: 0 0 24px; font-size: 2.4rem; letter-spacing: -1px; }
+.app-title { display: flex; align-items: center; gap: 12px; }
+.app-title-icon { width: 44px; height: 44px; border-radius: 12px; }
+.app-title span { background: linear-gradient(90deg, #c084fc, #60a5fa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+h2 { margin: 0; color: #e8e8ef; font-size: 1.35rem; }
+h3 { color: #c8c8d2; }
+
+button { margin: 0; padding: 10px 15px; border: 0; border-radius: 10px; background: #272a33; color: #fff; font-size: .95rem; cursor: pointer; transition: background .15s ease, transform .15s ease, box-shadow .15s ease; }
+button:hover { background: #393d49; transform: translateY(-1px); }
+button:active { transform: translateY(1px); }
+button:disabled { opacity: .45; cursor: default; transform: none; }
+input[type="text"], input[type="password"] { width: min(100%, 500px); padding: 11px 13px; border: 1px solid #343844; border-radius: 10px; outline: none; background: #171920; color: #fff; font-size: 1rem; }
+input[type="text"]:focus, input[type="password"]:focus { border-color: #9b6cff; box-shadow: 0 0 0 3px rgba(155, 108, 255, .15); }
+input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
+
+.player-card, .section-card { margin-bottom: 20px; padding: 20px; border: 1px solid #30333d; border-radius: 18px; background: rgba(24, 26, 34, .92); box-shadow: 0 10px 28px rgba(0, 0, 0, .22); }
+.player-card { padding: 24px; border-radius: 20px; background: rgba(24, 26, 34, .95); }
+.card-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.card-actions, .connection-status, .search-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.connection-status { color: #8f93a0; font-size: .9rem; }
+.connection-status span + span::before { content: "•"; margin-right: 8px; color: #5f6470; }
+
+#wifi-name { color: #60a5fa; font-weight: 600; }
+#bluetooth-name { color: #c084fc; font-weight: 600; }
+#wifi-status, #bluetooth-status { color: #8dd59a; }
+#wifi-details, #wifi-saved-networks, #wifi-network-list span, #wifi-connect-status, #wifi-scan-status, #bluetooth-scan-status { color: #858995; font-size: .9rem; }
+#wifi-details, #wifi-saved-networks { margin-bottom: 6px; }
+#wifi-network-list { margin-top: 10px; }
+#wifi-network-list > div, #bluetooth-device-list > div, #playlists > div, #searchResults > div { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid #292c35; }
+#wifi-network-list > div:last-child, #bluetooth-device-list > div:last-child, #playlists > div:last-child, #searchResults > div:last-child { border-bottom: 0; }
+.wifi-network { flex: 1; text-align: left; }
+#wifi-connect-form { display: none; margin-top: 12px; }
+#wifi-selected-network { margin-bottom: 7px; color: #c8c8d2; }
+
+.search-row input { flex: 1 1 260px; }
+#searchResults { margin-top: 12px; }
+#playlists > div, #searchResults > div { cursor: pointer; }
+.song-row-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.song-play-next { flex-shrink: 0; padding: 8px 11px; font-size: .85rem; }
+.collection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+
+#title { margin: 0 0 4px; color: #fff; font-size: 1.8rem; }
+#artist { color: #c1c3cc; font-size: 1.1rem; }
+#album { margin-top: 3px; color: #858995; font-size: .95rem; }
+#up-next { margin-top: 14px; color: #d8b4fe; font-size: .95rem; overflow-wrap: anywhere; }
+#queue-runtime { margin-top: 4px; color: #858995; font-size: .84rem; }
+.player-layout { display: grid; grid-template-columns: 240px 1fr; gap: 28px; align-items: center; }
+.artwork-column { display: flex; align-items: center; justify-content: center; }
+.now-playing-label { margin-bottom: 6px; color: #858995; font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; }
+.player-info-column { min-width: 0; }
+.transport-controls { display: flex; align-items: center; gap: 12px; margin: 20px 0 16px; }
+.transport-button { display: flex; align-items: center; justify-content: center; width: 52px; height: 48px; padding: 0; font-size: 1.1rem; }
+.primary-control { width: 60px; height: 56px; border-radius: 14px; background: linear-gradient(135deg, #8b5cf6, #4f6df5); box-shadow: 0 8px 22px rgba(99, 102, 241, .35); }
+.primary-control:hover { background: linear-gradient(135deg, #9f67ff, #4b8cff); }
+.seek-row { display: grid; grid-template-columns: 42px 1fr 42px; align-items: center; gap: 8px; margin: 14px 0; }
+.seek-row input { width: 100%; }
+.seek-row span { color: #8f93a0; font-size: .85rem; text-align: center; }
+.secondary-button { padding: 8px 12px; border: 1px solid transparent; font-size: .88rem; }
+.secondary-button.active { border-color: rgba(139, 92, 246, .45); background: rgba(139, 92, 246, .18); color: #d8b4fe; }
+.volume-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.volume-icon { width: 24px; opacity: .8; text-align: center; }
+.volume-row input { flex: 1; max-width: 320px; }
+#coverArt { display: block; width: 240px; height: 240px; margin: 0; border-radius: 16px; object-fit: cover; box-shadow: 0 12px 32px rgba(0, 0, 0, .38); }
+
+#queue-card.is-collapsed #queue { display: none; }
+#queue-card.is-collapsed .queue-content-actions { display: none; }
+#queue-card.is-collapsed .card-heading { margin-bottom: 0; }
+#search-card.is-collapsed .search-row, #search-card.is-collapsed #searchResults, #playlists-card.is-collapsed #playlists { display: none; }
+#search-card.is-collapsed .card-heading, #playlists-card.is-collapsed .card-heading { margin-bottom: 0; }
+#wifi-controls.is-collapsed .connection-status, #wifi-controls.is-collapsed #wifi-details, #wifi-controls.is-collapsed #wifi-saved-networks, #wifi-controls.is-collapsed .card-actions, #wifi-controls.is-collapsed #wifi-network-list, #wifi-controls.is-collapsed #wifi-connect-form, #bluetooth-controls.is-collapsed .connection-status, #bluetooth-controls.is-collapsed .card-actions, #bluetooth-controls.is-collapsed #bluetooth-device-list, #system-card.is-collapsed #system-status { display: none; }
+#wifi-controls.is-collapsed .card-heading, #bluetooth-controls.is-collapsed .card-heading, #system-card.is-collapsed .card-heading { margin-bottom: 0; }
+.system-status, #system-status { color: #c8c8d2; line-height: 1.6; }
+.queue-content-actions { margin: -4px 0 10px; }
+#queue > div { display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: 7px; cursor: pointer; transition: background .15s ease, transform .15s ease; }
+#queue > div:hover { background: rgba(255, 255, 255, .06); transform: translateX(3px); }
+#queue > div[style*="font-weight"] { background: rgba(155, 108, 255, .16); color: #d8b4fe; }
+.queue-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.queue-actions { display: flex; flex-shrink: 0; }
+.queue-actions button, .queue-drag-handle { min-width: 44px; min-height: 44px; padding: 6px; }
+.queue-drag-handle { touch-action: none; user-select: none; cursor: grab; }
+#queue > div.queue-dragging { opacity: .55; }
+#queue > div.queue-drop-target { outline: 2px solid #9b6cff; }
+.queue-busy { pointer-events: none; opacity: .65; }
+.queue-remove { font-size: 1.3rem; }
+
+#app-message { position: fixed; z-index: 10; right: 20px; bottom: 20px; max-width: min(420px, calc(100vw - 40px)); padding: 12px 16px; border: 1px solid #ef7d7d; border-radius: 12px; background: #3b1f27; color: #ffe4e6; box-shadow: 0 8px 26px rgba(0, 0, 0, .35); }
+
+@media (max-width: 700px) {
+  body { padding: 16px; }
+  .player-card, .section-card { padding: 16px; }
+  .player-layout { grid-template-columns: 1fr; gap: 20px; }
+  #coverArt { width: min(72vw, 280px); height: min(72vw, 280px); }
+  .now-playing { text-align: center; }
+  .transport-controls, .secondary-controls, .volume-row { justify-content: center; }
+  .card-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .card-actions { width: 100%; }
+  #queue-card .card-heading, #search-card .card-heading, #playlists-card .card-heading, #wifi-controls .card-heading, #bluetooth-controls .card-heading, #system-card .card-heading { flex-direction: row; align-items: center; }
+  .search-row button { width: 100%; }
+  .song-play-next { padding: 8px 10px; }
+  .collection-actions button { flex: 1 1 130px; }
+  #queue > div { flex-wrap: nowrap; gap: 8px; }
+  .queue-label { flex-basis: auto; }
+  .queue-actions { margin-left: 0; }
+}

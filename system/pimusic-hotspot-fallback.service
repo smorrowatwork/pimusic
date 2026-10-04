@@ -1,0 +1,13 @@
+[Unit]
+Description=PiMusic Wi-Fi hotspot fallback
+Wants=NetworkManager.service
+After=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/pimusic/pimusic-hotspot-fallback
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

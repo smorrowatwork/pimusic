@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PiMusic</title>
+  <link rel="icon" type="image/png" href="/pimusic-icon.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <h1 class="app-title"><img class="app-title-icon" src="/pimusic-icon.png" alt=""><span>PiMusic</span></h1>
+
+<section class="player-card">
+  <div class="player-layout">
+
+    <div class="artwork-column">
+      <img id="coverArt" alt="Album Art">
+    </div>
+
+    <div class="player-info-column">
+
+      <div class="now-playing">
+        <div class="now-playing-label">Now Playing</div>
+
+        <h2 id="title">Nothing playing</h2>
+        <div id="artist"></div>
+        <div id="album"></div>
+        <div id="up-next"></div>
+        <div id="queue-runtime"></div>
+      </div>
+
+<div class="transport-controls">
+  <button class="transport-button" onclick="previousTrack()" title="Previous">
+    ⏮
+  </button>
+
+  <button
+    id="playPauseButton"
+    class="transport-button primary-control"
+    onclick="togglePlayPause()"
+    title="Play"
+  >
+    ▶
+  </button>
+
+  <button class="transport-button" onclick="nextTrack()" title="Next">
+    ⏭
+  </button>
+</div>
+
+      <div class="seek-row">
+        <span id="elapsed-time">0:00</span>
+
+        <input
+          id="seek"
+          type="range"
+          min="0"
+          max="100"
+          value="0"
+        >
+
+        <span id="total-time">0:00</span>
+      </div>
+
+<div class="secondary-controls">
+  <button
+    id="shuffleButton"
+    class="secondary-button"
+    onclick="shuffleQueue()"
+    title="Shuffle tracks after the current song"
+  >
+    ⤨ <span>Shuffle Upcoming</span>
+  </button>
+
+  <button
+    id="repeatButton"
+    class="secondary-button"
+    onclick="cycleRepeat()"
+    title="Repeat"
+  >
+    ↻ <span id="repeatLabel">Off</span>
+  </button>
+</div>
+
+<div class="volume-row">
+  <span class="volume-icon">🔊</span>
+
+  <input
+    id="volume"
+    type="range"
+    min="0"
+    max="100"
+    value="50"
+  >
+</div>
+
+    </div>
+  </div>
+</section>
+
+<section id="queue-card" class="section-card is-collapsed">
+  <div class="card-heading">
+    <h2>Current Queue</h2>
+    <button id="queueToggleButton" onclick="toggleQueue()" aria-expanded="false">Expand</button>
+  </div>
+  <div class="queue-content-actions">
+    <button id="clearQueueButton" onclick="clearQueue()" disabled>Clear Queue</button>
+  </div>
+  <div id="queue">No queue loaded.</div>
+</section>
+
+<section id="search-card" class="section-card is-collapsed">
+  <div class="card-heading">
+    <h2>Search</h2>
+    <button id="searchToggleButton" onclick="toggleSection('search-card', 'searchToggleButton')" aria-expanded="false">Expand</button>
+  </div>
+  <form class="search-row" onsubmit="searchLibrary(); return false;">
+    <input id="searchBox" type="text" placeholder="Search artists, albums, songs">
+    <button type="submit">Search</button>
+  </form>
+  <div id="searchResults"></div>
+</section>
+
+<section id="playlists-card" class="section-card is-collapsed">
+  <div class="card-heading">
+    <h2>Playlists</h2>
+    <button id="playlistsToggleButton" onclick="toggleSection('playlists-card', 'playlistsToggleButton')" aria-expanded="false">Expand</button>
+  </div>
+  <div id="playlists">Loading playlists...</div>
+</section>
+
+<section id="wifi-controls" class="section-card is-collapsed">
+  <div class="card-heading">
+    <h2>Wi-Fi</h2>
+    <div class="connection-status">
+      <span id="wifi-name">Checking…</span>
+      <span id="wifi-status">Unknown</span>
+    </div>
+    <button id="wifiToggleButton" onclick="toggleSection('wifi-controls', 'wifiToggleButton')" aria-expanded="false">Expand</button>
+  </div>
+  <div id="wifi-details"></div>
+  <div id="wifi-saved-networks"></div>
+  <div class="card-actions">
+    <button onclick="scanWifiNetworks()">Scan Wi-Fi Networks</button>
+    <span id="wifi-scan-status"></span>
+  </div>
+  <div id="wifi-network-list"></div>
+  <form id="wifi-connect-form">
+    <div id="wifi-selected-network"></div>
+    <input id="wifi-password" type="password" autocomplete="current-password" placeholder="Wi-Fi password">
+    <button type="submit">Connect</button>
+    <span id="wifi-connect-status"></span>
+  </form>
+</section>
+
+<section id="bluetooth-controls" class="section-card is-collapsed">
+  <div class="card-heading">
+    <h2>Bluetooth</h2>
+    <div class="connection-status">
+      <span id="bluetooth-name">Unknown</span>
+      <span id="bluetooth-status">Unknown</span>
+    </div>
+    <button id="bluetoothToggleButton" onclick="toggleSection('bluetooth-controls', 'bluetoothToggleButton')" aria-expanded="false">Expand</button>
+  </div>
+  <div class="card-actions">
+    <button onclick="scanBluetoothDevices()">Scan for Speakers</button>
+    <span id="bluetooth-scan-status"></span>
+  </div>
+  <div id="bluetooth-device-list"></div>
+</section>
+
+<section id="system-card" class="section-card is-collapsed">
+  <div class="card-heading">
+    <h2>About / System Status</h2>
+    <button id="systemToggleButton" onclick="toggleSection('system-card', 'systemToggleButton')" aria-expanded="false">Expand</button>
+  </div>
+  <div id="system-status">Loading system status?</div>
+</section>
+
+<div id="app-message" role="status" aria-live="polite" hidden></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

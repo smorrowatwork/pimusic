@@ -1,0 +1,44 @@
+#!/bin/bash
+set -euo pipefail
+
+CONFIG=/etc/pimusic/hotspot-fallback.conf
+source "$CONFIG"
+
+active_connection() {
+  nmcli -g GENERAL.CONNECTION device show "$WIFI_DEVICE" 2>/dev/null || true
+}
+
+client_connected() {
+  local connection
+  connection=$(active_connection)
+  [[ -n "$connection" && "$connection" != "--" && "$connection" != "$HOTSPOT_CONNECTION" ]]
+}
+
+connect_saved_network() {
+  if [[ -n "${PREFERRED_CONNECTION:-}" ]]; then
+    nmcli --wait "$CONNECT_TIMEOUT" connection up id "$PREFERRED_CONNECTION" \
+      ifname "$WIFI_DEVICE" >/dev/null 2>&1 || true
+  fi
+
+  if ! client_connected; then
+    nmcli --wait "$CONNECT_TIMEOUT" device connect "$WIFI_DEVICE" \
+      >/dev/null 2>&1 || true
+  fi
+}
+
+activate_hotspot() {
+  nmcli --wait 20 connection up id "$HOTSPOT_CONNECTION" \
+    ifname "$WIFI_DEVICE" >/dev/null
+}
+
+while true; do
+  if ! client_connected; then
+    connect_saved_network
+  fi
+
+  if ! client_connected; then
+    activate_hotspot || true
+  fi
+
+  sleep "$RETRY_INTERVAL"
+done
