@@ -27,8 +27,8 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
 #wifi-name { color: #60a5fa; font-weight: 600; }
 #bluetooth-name { color: #c084fc; font-weight: 600; }
 #wifi-status, #bluetooth-status { color: #8dd59a; }
-#wifi-details, #wifi-saved-networks, #wifi-network-list span, #wifi-connect-status, #wifi-scan-status, #bluetooth-scan-status { color: #858995; font-size: .9rem; }
-#wifi-details, #wifi-saved-networks { margin-bottom: 6px; }
+#wifi-details, #wifi-setup-status, #wifi-saved-networks, #wifi-network-list span, #wifi-connect-status, #wifi-scan-status, #bluetooth-scan-status { color: #858995; font-size: .9rem; }
+#wifi-details, #wifi-setup-status, #wifi-saved-networks { margin-bottom: 6px; }
 #wifi-network-list { margin-top: 10px; }
 #wifi-network-list > div, #bluetooth-device-list > div, #playlists > div, #searchResults > div { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid #292c35; }
 #wifi-network-list > div:last-child, #bluetooth-device-list > div:last-child, #playlists > div:last-child, #searchResults > div:last-child { border-bottom: 0; }
@@ -71,7 +71,7 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
 #queue-card.is-collapsed .card-heading { margin-bottom: 0; }
 #search-card.is-collapsed .search-row, #search-card.is-collapsed #searchResults, #playlists-card.is-collapsed #playlists { display: none; }
 #search-card.is-collapsed .card-heading, #playlists-card.is-collapsed .card-heading { margin-bottom: 0; }
-#wifi-controls.is-collapsed .connection-status, #wifi-controls.is-collapsed #wifi-details, #wifi-controls.is-collapsed #wifi-saved-networks, #wifi-controls.is-collapsed .card-actions, #wifi-controls.is-collapsed #wifi-network-list, #wifi-controls.is-collapsed #wifi-connect-form, #bluetooth-controls.is-collapsed .connection-status, #bluetooth-controls.is-collapsed .card-actions, #bluetooth-controls.is-collapsed #bluetooth-device-list, #system-card.is-collapsed #system-status { display: none; }
+#wifi-controls.is-collapsed .connection-status, #wifi-controls.is-collapsed #wifi-details, #wifi-controls.is-collapsed #wifi-setup-status, #wifi-controls.is-collapsed #wifi-saved-networks, #wifi-controls.is-collapsed .card-actions, #wifi-controls.is-collapsed #wifi-network-list, #wifi-controls.is-collapsed #wifi-connect-form, #bluetooth-controls.is-collapsed .connection-status, #bluetooth-controls.is-collapsed .card-actions, #bluetooth-controls.is-collapsed #bluetooth-device-list, #system-card.is-collapsed #system-status { display: none; }
 #wifi-controls.is-collapsed .card-heading, #bluetooth-controls.is-collapsed .card-heading, #system-card.is-collapsed .card-heading { margin-bottom: 0; }
 .system-status, #system-status { color: #c8c8d2; line-height: 1.6; }
 .queue-content-actions { margin: -4px 0 10px; }

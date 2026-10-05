@@ -1,0 +1,49 @@
+#!/bin/bash
+set -euo pipefail
+
+CONFIG=/etc/pimusic/hotspot-fallback.conf
+RUNTIME_DIR=/run/pimusic
+FORCE_FILE="$RUNTIME_DIR/force-hotspot"
+SERVICE=pimusic-hotspot-fallback.service
+
+json_status() {
+  local service_active=false forced=false hotspot_active=false connection
+  if systemctl is-active --quiet "$SERVICE"; then service_active=true; fi
+  if [[ -f "$FORCE_FILE" ]]; then forced=true; fi
+  connection=$(nmcli -g GENERAL.CONNECTION device show "$WIFI_DEVICE" 2>/dev/null | head -n 1 || true)
+  if [[ "$connection" == "$HOTSPOT_CONNECTION" ]]; then hotspot_active=true; fi
+  printf '{"installed":true,"service_active":%s,"forced":%s,"hotspot_active":%s}\n' \
+    "$service_active" "$forced" "$hotspot_active"
+}
+
+if [[ ! -r "$CONFIG" ]]; then
+  printf '{"installed":false,"service_active":false,"forced":false,"hotspot_active":false}\n'
+  exit 0
+fi
+source "$CONFIG"
+
+case "${1:-status}" in
+  status)
+    json_status
+    ;;
+  start)
+    install -d -m 755 "$RUNTIME_DIR"
+    touch "$FORCE_FILE"
+    systemctl restart "$SERVICE"
+    json_status
+    ;;
+  stop)
+    rm -f "$FORCE_FILE"
+    systemctl restart "$SERVICE"
+    json_status
+    ;;
+  prepare-connect)
+    rm -f "$FORCE_FILE"
+    systemctl stop "$SERVICE"
+    json_status
+    ;;
+  *)
+    echo "Usage: $0 {status|start|stop|prepare-connect}" >&2
+    exit 2
+    ;;
+esac

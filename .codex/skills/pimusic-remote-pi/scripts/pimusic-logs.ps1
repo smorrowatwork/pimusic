@@ -5,11 +5,11 @@ param(
     [string]$Service,
     [ValidateRange(1, 500)]
     [int]$Lines = 100,
-    [string]$Host = "mypizero2",
+    [string]$TargetHost = "mypizero2",
     [string]$User = "stevenm"
 )
 
-$target = "$User@$Host"
+$target = "$User@$TargetHost"
 $command = "journalctl --user -u $Service --no-pager -n $Lines"
 Write-Host "+ ssh $target `"$command`""
 & ssh $target $command

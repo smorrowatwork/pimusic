@@ -3,13 +3,14 @@ param(
     [Parameter(Mandatory)]
     [string[]]$File,
     [switch]$AllowOverwrite,
-    [string]$Host = "mypizero2",
+    [string]$TargetHost = "mypizero2",
     [string]$User = "stevenm",
     [string]$RemoteRoot = "/home/stevenm/pimusic"
 )
 
+$ErrorActionPreference = "Stop"
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..\..")).Path
-$target = "$User@$Host"
+$target = "$User@$TargetHost"
 $excludedSegments = @(".git", ".venv", "venv", "__pycache__", ".vscode", ".codex", ".agents")
 $excludedExtensions = @(".pyc", ".pyo", ".pem", ".key")
 
@@ -42,10 +43,11 @@ foreach ($relativePath in $File) {
     $remotePath = "$RemoteRoot/$normalizedRelative"
     $remoteDirectory = (Split-Path $remotePath -Parent) -replace "\\", "/"
     $localHash = (Get-FileHash -LiteralPath $localPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $remoteHash = (& ssh $target "if test -f $(Quote-Posix $remotePath); then sha256sum $(Quote-Posix $remotePath) | cut -d ' ' -f1; fi").Trim().ToLowerInvariant()
+    $remoteHashOutput = & ssh $target "if test -f $(Quote-Posix $remotePath); then sha256sum $(Quote-Posix $remotePath) | cut -d ' ' -f1; fi"
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to inspect remote file: $remotePath"
     }
+    $remoteHash = if ($null -eq $remoteHashOutput) { "" } else { $remoteHashOutput.Trim().ToLowerInvariant() }
 
     if ($remoteHash -and $remoteHash -ne $localHash -and -not $AllowOverwrite) {
         throw "Remote file differs and was not overwritten: $remotePath. Inspect it, then rerun with -AllowOverwrite only if replacing it is intended."

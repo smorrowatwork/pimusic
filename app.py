@@ -51,6 +51,7 @@ class WifiConnectRequest(BaseModel):
     password: str | None = None
 
 MPV_SOCKET = "/tmp/pimusic-mpv.sock"
+HOTSPOT_CONTROL = "/usr/local/bin/pimusic-hotspot-control"
 mpv_lock = RLock()
 PIMUSIC_VERSION = "1.0"
 
@@ -212,6 +213,11 @@ def connect_wifi(request: WifiConnectRequest):
         if secured.returncode != 0:
             raise HTTPException(status_code=400, detail="Unable to prepare that Wi-Fi connection")
 
+    setup_paused = False
+    if hotspot_setup_status()["forced"]:
+        hotspot_setup_status("prepare-connect")
+        setup_paused = True
+
     password_file = None
     try:
         command = ["nmcli", "--wait", "30", "connection", "up", "id", profile, "ifname", status["device"]]
@@ -227,12 +233,53 @@ def connect_wifi(request: WifiConnectRequest):
             text=True,
             timeout=40,
         )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        if setup_paused:
+            hotspot_setup_status("stop")
+        raise HTTPException(status_code=503, detail="Unable to activate the Wi-Fi connection") from error
     finally:
         if password_file:
             Path(password_file).unlink(missing_ok=True)
     if result.returncode != 0:
+        if setup_paused:
+            hotspot_setup_status("stop")
         raise HTTPException(status_code=400, detail="Unable to connect to that Wi-Fi network")
+    connection_status = wifi_status_info()
+    if not connection_status["connected"]:
+        if setup_paused:
+            hotspot_setup_status("stop")
+        raise HTTPException(status_code=400, detail="Wi-Fi connection did not become active")
+
+    # Resume normal fallback only after NetworkManager has activated normal
+    # Wi-Fi, so it cannot race the requested connection attempt.
+    if setup_paused:
+        hotspot_setup_status("stop")
     return wifi_status_info()
+
+def hotspot_setup_status(action="status"):
+    if not Path(HOTSPOT_CONTROL).is_file():
+        return {
+            "installed": False,
+            "service_active": False,
+            "forced": False,
+            "hotspot_active": False,
+        }
+
+    result = subprocess.run(
+        ["sudo", "-n", HOTSPOT_CONTROL, action],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=503,
+            detail="Setup hotspot control is unavailable. Check its installation and sudoers access.",
+        )
+    try:
+        return json.loads(result.stdout)
+    except ValueError as error:
+        raise HTTPException(status_code=503, detail="Setup hotspot control returned an invalid status") from error
 
 def switch_bluetooth_output(address: str):
     mac_fragment = address.replace(":", "_").upper()
@@ -1459,6 +1506,16 @@ def bluetooth_status():
 @app.get("/api/wifi/status")
 def wifi_status():
     return wifi_status_info()
+
+@app.get("/api/wifi/setup")
+def wifi_setup_status():
+    return hotspot_setup_status()
+
+@app.post("/api/wifi/setup/{action}")
+def wifi_setup_action(action: str):
+    if action not in ("start", "stop"):
+        raise HTTPException(status_code=404, detail="Unknown setup action")
+    return hotspot_setup_status(action)
 
 @app.get("/api/system/status")
 def system_status():

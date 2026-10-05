@@ -35,10 +35,11 @@ The vanilla JavaScript client calls `/api/*` endpoints for playback, queue editi
 
 - The README specifies `pimusic-mpv.service` and `pimusic-web.service` as user units, enabled with `loginctl enable-linger` so they run at boot without an interactive login.
 - `system/pimusic-hotspot-fallback.service` is an optional system service. Its installed script repeatedly tries a preferred/saved NetworkManager Wi-Fi profile and starts a `pimusic-setup` shared-IP hotspot if none connects.
+- The fallback installer also installs `/usr/local/bin/pimusic-hotspot-control` and grants the PiMusic user passwordless access to that exact helper. The web API uses it only to read fallback status or explicitly enter/exit setup mode; it does not receive broad systemd or NetworkManager `sudo` access.
 - The README describes, but this repository does **not** provide, a root-owned `/usr/local/bin/pimusic-set-bluetooth-device` helper and an optional `pimusic-bluetooth.service` reconnect unit. The backend currently calls that helper when saving a selected speaker.
 
 Ports and sockets: the documented web listener is TCP 8000 on all interfaces; MPV IPC is `/tmp/pimusic-mpv.sock`; the documented fallback hotspot normally uses `10.42.0.1` through NetworkManager shared IPv4.
 
 ## Planned, not current architecture
 
-The desired provisioning design is a NetworkManager-based state flow shared by automatic Wi-Fi failure, a GPIO button, and the web UI. It may provide a temporary `PiMusic-Setup` AP and a captive-portal-style flow. GPIO state handling, captive portal behavior, `pimusic.local` mDNS, and the unified provisioning state machine are not present in this repository today.
+The desired provisioning design is a NetworkManager-based state flow shared by automatic Wi-Fi failure, a GPIO button, and the web UI. The repository now has a limited web entry/exit control for the existing fallback hotspot, but GPIO state handling, captive portal behavior, `pimusic.local` mDNS, and the unified provisioning state machine are not present today.

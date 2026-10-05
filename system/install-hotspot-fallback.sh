@@ -11,6 +11,12 @@ WIFI_DEVICE=${WIFI_DEVICE:-wlan0}
 PREFERRED_CONNECTION=${PREFERRED_CONNECTION:-netplan-wlan0-morrow}
 HOTSPOT_CONNECTION=pimusic-setup
 HOTSPOT_SSID=pimusic-setup
+PIMUSIC_USER=${PIMUSIC_USER:-${SUDO_USER:-}}
+
+if [[ ! "$PIMUSIC_USER" =~ ^[a-z_][a-z0-9_-]*\$?$ ]] || ! id "$PIMUSIC_USER" >/dev/null 2>&1; then
+  echo "Set PIMUSIC_USER to the non-root account that runs PiMusic."
+  exit 1
+fi
 
 read -r -s -p "Hotspot password for ${HOTSPOT_SSID}: " HOTSPOT_PASSWORD
 echo
@@ -22,6 +28,8 @@ fi
 install -d -m 755 /usr/local/lib/pimusic
 install -m 755 "$SCRIPT_DIR/pimusic-hotspot-fallback" \
   /usr/local/lib/pimusic/pimusic-hotspot-fallback
+install -m 755 "$SCRIPT_DIR/pimusic-hotspot-control" \
+  /usr/local/bin/pimusic-hotspot-control
 install -m 644 "$SCRIPT_DIR/pimusic-hotspot-fallback.service" \
   /etc/systemd/system/pimusic-hotspot-fallback.service
 
@@ -63,6 +71,11 @@ CONNECT_TIMEOUT=30
 RETRY_INTERVAL=30
 EOF
 chmod 600 /etc/pimusic/hotspot-fallback.conf
+
+printf '%s ALL=(root) NOPASSWD: /usr/local/bin/pimusic-hotspot-control\n' "$PIMUSIC_USER" \
+  > /etc/sudoers.d/pimusic-hotspot-control
+chmod 440 /etc/sudoers.d/pimusic-hotspot-control
+visudo -cf /etc/sudoers.d/pimusic-hotspot-control
 
 nmcli connection reload
 systemctl daemon-reload

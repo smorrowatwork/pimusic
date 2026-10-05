@@ -9,7 +9,8 @@ This is a concise record of verified project context, not a debugging transcript
 - Headless user services need `loginctl enable-linger`; MPV, PipeWire, and the backend need to share the intended user session.
 - Bluetooth pairing/connection is handled with `bluetoothctl`, while PipeWire output selection is handled with `wpctl`. The project deliberately does not depend on `pactl` for this.
 - The Pi Zero 2 W's shared Wi-Fi/Bluetooth radio and limited resources matter in deployment. Check power throttling and Wi-Fi power saving when Bluetooth is unreliable.
-- An optional NetworkManager hotspot-fallback service is already included. It attempts normal saved Wi-Fi before activating `pimusic-setup`; it is not the full interactive provisioning system described below.
+- An optional NetworkManager hotspot-fallback service is already included. It attempts normal saved Wi-Fi before activating `pimusic-setup`; the web UI can explicitly request or exit that existing setup mode through one root-owned constrained helper. This is not yet the full interactive provisioning system described below.
+- When `pimusic-setup` is active, the fallback service must not repeatedly reactivate it or attempt a competing Wi-Fi activation: either action disconnects setup clients. The web connection flow pauses fallback during its explicit NetworkManager connection attempt, then resumes it once the attempt has completed.
 - Full VS Code Remote plus Codex workloads on the Pi have exhausted RAM/zram and made it nearly unresponsive. Prefer development on a PC and use the Pi mainly for deployment and test; keep runtime dependencies lightweight.
 
 ## Known project decisions / context

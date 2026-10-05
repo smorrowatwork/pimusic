@@ -2,6 +2,7 @@
 set -euo pipefail
 
 CONFIG=/etc/pimusic/hotspot-fallback.conf
+FORCE_FILE=/run/pimusic/force-hotspot
 source "$CONFIG"
 
 active_connection() {
@@ -31,13 +32,24 @@ activate_hotspot() {
     ifname "$WIFI_DEVICE" >/dev/null
 }
 
-while true; do
-  if ! client_connected; then
-    connect_saved_network
-  fi
+setup_hotspot_requested() {
+  [[ -f "$FORCE_FILE" ]]
+}
 
-  if ! client_connected; then
-    activate_hotspot || true
+hotspot_active() {
+  [[ "$(active_connection)" == "$HOTSPOT_CONNECTION" ]]
+}
+
+while true; do
+  if setup_hotspot_requested; then
+    if ! hotspot_active; then
+      activate_hotspot || true
+    fi
+  elif ! client_connected && ! hotspot_active; then
+    connect_saved_network
+    if ! client_connected; then
+      activate_hotspot || true
+    fi
   fi
 
   sleep "$RETRY_INTERVAL"

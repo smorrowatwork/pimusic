@@ -40,7 +40,7 @@ Use this skill for PiMusic work involving the Raspberry Pi deployment/test targe
 
 ## Helpers
 
-All helper commands may override `-Host`, `-User`, or `-RemoteRoot` for an explicitly requested target change.
+All helper commands may override `-TargetHost`, `-User`, or `-RemoteRoot` for an explicitly requested target change.
 
 - `scripts/remote-command.ps1 -Command 'uptime'` runs and prints a transparent SSH command.
 - `scripts/deploy-files.ps1 -File app.py,static/app.js` previews selected files. Add `-AllowOverwrite` only after inspecting a reported remote difference.

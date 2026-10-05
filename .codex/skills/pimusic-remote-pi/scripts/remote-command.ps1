@@ -2,11 +2,11 @@
 param(
     [Parameter(Mandatory)]
     [string]$Command,
-    [string]$Host = "mypizero2",
+    [string]$TargetHost = "mypizero2",
     [string]$User = "stevenm"
 )
 
-$target = "$User@$Host"
+$target = "$User@$TargetHost"
 Write-Host "+ ssh $target `"$Command`""
 & ssh $target $Command
 exit $LASTEXITCODE

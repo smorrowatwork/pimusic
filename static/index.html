@@ -139,7 +139,12 @@
     <button id="wifiToggleButton" onclick="toggleSection('wifi-controls', 'wifiToggleButton')" aria-expanded="false">Expand</button>
   </div>
   <div id="wifi-details"></div>
+  <div id="wifi-setup-status"></div>
   <div id="wifi-saved-networks"></div>
+  <div class="card-actions" id="wifi-setup-actions">
+    <button id="wifi-setup-start" onclick="setWifiSetupMode('start')">Start Setup Hotspot</button>
+    <button id="wifi-setup-stop" onclick="setWifiSetupMode('stop')">Exit Setup Mode</button>
+  </div>
   <div class="card-actions">
     <button onclick="scanWifiNetworks()">Scan Wi-Fi Networks</button>
     <span id="wifi-scan-status"></span>

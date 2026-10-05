@@ -15,7 +15,10 @@ sudo ./system/install-hotspot-fallback.sh
 
 The installer securely prompts for the hotspot password and writes it only to
 NetworkManager's root-readable connection profile. It does not activate the
-hotspot immediately. Verify the normal Wi-Fi path first, then enable it:
+hotspot immediately. It also installs a root-owned, allow-listed control helper
+for the PiMusic web service; this helper may only report setup status or enter/
+exit explicitly requested setup mode. Verify the normal Wi-Fi path first, then
+enable it:
 
 ```bash
 sudo systemctl start pimusic-hotspot-fallback.service
@@ -24,8 +27,24 @@ sudo systemctl status pimusic-hotspot-fallback.service --no-pager
 
 To test fallback, temporarily turn off the usual access point or take the Pi out
 of range. Join `pimusic-setup` from a phone or tablet, then open
-`http://10.42.0.1:8000`. When a saved network returns, the service checks again
-within 30 seconds and reconnects the Pi to it.
+`http://10.42.0.1:8000`. While the hotspot is active, use the Wi-Fi card to
+choose and connect a saved or newly scanned network; this avoids interrupting
+connected setup clients with repeated background reconnect attempts.
+
+## Web setup controls
+
+After installing this version of the fallback service, the PiMusic Wi-Fi card
+shows **Start Setup Hotspot** and **Exit Setup Mode**. Starting setup mode writes
+a runtime-only request and restarts the fallback service, which immediately
+activates `pimusic-setup` even if a normal Wi-Fi network is currently reachable.
+Exiting removes that request and restarts the service so it immediately tries
+saved Wi-Fi again. If no saved network is available, normal fallback behavior
+continues and the hotspot may remain active.
+
+While the hotspot is active, the fallback service leaves it in place rather
+than repeatedly interrupting connected setup clients to retry saved Wi-Fi.
+The web connection flow briefly pauses the fallback service while NetworkManager
+joins the selected Wi-Fi network, then resumes normal fallback afterward.
 
 To stop or remove the feature:
 

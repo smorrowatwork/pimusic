@@ -19,6 +19,7 @@ let queueLoadVersion = 0;
 let selectedWifiNetwork = null;
 let messageTimer = null;
 let playNextPending = false;
+let wifiSetupPending = false;
 
 function showError(error) {
   const message = document.getElementById("app-message");
@@ -234,6 +235,58 @@ async function refreshWifiStatus() {
     name.textContent = "Unavailable";
     status.textContent = "Unknown";
     details.textContent = "";
+  }
+}
+
+function renderWifiSetupStatus(setup) {
+  const status = document.getElementById("wifi-setup-status");
+  const start = document.getElementById("wifi-setup-start");
+  const stop = document.getElementById("wifi-setup-stop");
+  if (!setup.installed) {
+    status.textContent = "Setup hotspot control is not installed.";
+    start.disabled = true;
+    stop.disabled = true;
+    return;
+  }
+  if (setup.forced) {
+    status.textContent = setup.hotspot_active
+      ? "Setup hotspot is active."
+      : "Starting setup hotspot…";
+  } else if (setup.service_active) {
+    status.textContent = "Automatic Wi-Fi fallback is enabled.";
+  } else {
+    status.textContent = "Setup hotspot is ready but fallback is not running.";
+  }
+  start.disabled = wifiSetupPending || setup.forced;
+  stop.disabled = wifiSetupPending || !setup.forced;
+}
+
+async function refreshWifiSetupStatus() {
+  try {
+    const setup = await apiJson("/api/wifi/setup");
+    renderWifiSetupStatus(setup);
+  } catch (error) {
+    document.getElementById("wifi-setup-status").textContent = "Setup hotspot status unavailable.";
+    document.getElementById("wifi-setup-start").disabled = true;
+    document.getElementById("wifi-setup-stop").disabled = true;
+  }
+}
+
+async function setWifiSetupMode(action) {
+  if (wifiSetupPending) return;
+  wifiSetupPending = true;
+  document.getElementById("wifi-setup-start").disabled = true;
+  document.getElementById("wifi-setup-stop").disabled = true;
+  try {
+    const setup = await apiJson(`/api/wifi/setup/${action}`, { method: "POST" });
+    renderWifiSetupStatus(setup);
+    await refreshWifiStatus();
+  } catch (error) {
+    showError(error);
+    await refreshWifiSetupStatus();
+  } finally {
+    wifiSetupPending = false;
+    await refreshWifiSetupStatus();
   }
 }
 
@@ -956,6 +1009,7 @@ async function loadAlbum(albumId, artistId) {
     refreshBluetoothStatus();
     loadBluetoothDevices();
     refreshWifiStatus();
+    refreshWifiSetupStatus();
     refreshSystemStatus();
     loadSavedWifiNetworks();
 
