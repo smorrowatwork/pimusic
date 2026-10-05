@@ -25,11 +25,11 @@ Navidrome                         persistent MPV process
 - Controls one idle MPV process through its Unix-domain JSON IPC socket at `/tmp/pimusic-mpv.sock`, rather than launching a player per track.
 - Maintains queue metadata, recovery state, shuffle state, and volume JSON files under `~/.config/pimusic/`. The current code has a hard-coded queue-state base path for `/home/stevenm`; deployment changes should review that assumption.
 - On FastAPI startup, restores saved queue and playback state only when MPV has an empty playlist, then restores saved volume.
-- Provides Wi-Fi status/scan/connect and saved-profile endpoints through `nmcli`; provides Bluetooth scanning, pairing, trust, connection, and PipeWire sink selection through `bluetoothctl` and `wpctl`.
+- Provides Wi-Fi status/scan/connect and saved-profile endpoints through `nmcli`; connection failures are mapped to credential-safe, actionable messages rather than raw command output. A successful connection response includes the active Wi-Fi address when it can reach the browser. Bluetooth scanning, pairing, trust, connection, and PipeWire sink selection use `bluetoothctl` and `wpctl`.
 
 ### Browser/UI responsibilities
 
-The vanilla JavaScript client calls `/api/*` endpoints for playback, queue editing, library browsing, Wi-Fi, Bluetooth, and system status. It polls player status every second. The UI is served from the same FastAPI process, which mounts `static/` at `/`.
+The vanilla JavaScript client calls `/api/*` endpoints for playback, queue editing, library browsing, Wi-Fi, Bluetooth, and system status. It polls player status every second. During setup-hotspot handoff, it treats loss of the browser connection after submission as an expected outcome and tells the user to rejoin normal Wi-Fi; confirmed API failures remain visible as specific messages. The UI is served from the same FastAPI process, which mounts `static/` at `/`.
 
 ### Services and privileged boundary
 

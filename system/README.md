@@ -31,6 +31,12 @@ of range. Join `pimusic-setup` from a phone or tablet, then open
 choose and connect a saved or newly scanned network; this avoids interrupting
 connected setup clients with repeated background reconnect attempts.
 
+Submitting normal Wi-Fi credentials intentionally removes the setup hotspot.
+The browser may therefore lose its connection before it receives the successful
+response. Rejoin the normal Wi-Fi network, then open PiMusic at its hostname or
+current DHCP address. Confirmed connection failures remain on the page as safe,
+actionable messages; passwords and raw NetworkManager output are never shown.
+
 ## Web setup controls
 
 After installing this version of the fallback service, the PiMusic Wi-Fi card

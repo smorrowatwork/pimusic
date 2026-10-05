@@ -20,6 +20,7 @@ let selectedWifiNetwork = null;
 let messageTimer = null;
 let playNextPending = false;
 let wifiSetupPending = false;
+let wifiConnectPending = false;
 
 function showError(error) {
   const message = document.getElementById("app-message");
@@ -34,12 +35,21 @@ async function apiJson(url, options) {
   try {
     response = await fetch(url, options);
   } catch {
-    throw new Error("Unable to reach PiMusic. Check the network connection.");
+    const error = new Error("Unable to reach PiMusic. Check the network connection.");
+    error.networkError = true;
+    throw error;
   }
   const contentType = response.headers.get("content-type") || "";
-  const data = contentType.includes("application/json")
-    ? await response.json()
-    : { detail: await response.text() };
+  let data;
+  try {
+    data = contentType.includes("application/json")
+      ? await response.json()
+      : { detail: await response.text() };
+  } catch {
+    const error = new Error("Unable to reach PiMusic. Check the network connection.");
+    error.networkError = true;
+    throw error;
+  }
   if (!response.ok) throw new Error(data.detail || "The request could not be completed.");
   return data;
 }
@@ -363,26 +373,41 @@ async function scanWifiNetworks() {
 
 document.getElementById("wifi-connect-form").addEventListener("submit", async event => {
   event.preventDefault();
+  if (wifiConnectPending) return;
   const connectStatus = document.getElementById("wifi-connect-status");
+  const connectButton = event.currentTarget.querySelector("button[type=submit]");
   if (!selectedWifiNetwork) {
     connectStatus.textContent = "Choose a Wi-Fi network first.";
     return;
   }
+  const ssid = selectedWifiNetwork.ssid;
+  wifiConnectPending = true;
+  connectButton.disabled = true;
   connectStatus.textContent = "Connecting…";
   try {
-    await apiJson("/api/wifi/connect", {
+    const result = await apiJson("/api/wifi/connect", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ssid: selectedWifiNetwork.ssid,
+        ssid,
         password: document.getElementById("wifi-password").value || null,
       }),
     });
-    connectStatus.textContent = "Connected.";
+    const address = result.wifi?.ip_address;
+    connectStatus.textContent = address
+      ? `PiMusic joined ${ssid}. Rejoin your normal Wi-Fi, then open http://${address}:8000.`
+      : `PiMusic joined ${ssid}. Rejoin your normal Wi-Fi, then open PiMusic at its normal network address.`;
     await refreshWifiStatus();
   } catch (error) {
-    connectStatus.textContent = error.message || "Unable to connect";
-    showError(error);
+    if (error.networkError) {
+      connectStatus.textContent = `The connection request was sent. PiMusic may now be joining ${ssid}; rejoin your normal Wi-Fi, then open PiMusic at its normal network address.`;
+    } else {
+      connectStatus.textContent = error.message || "Unable to connect";
+      showError(error);
+    }
+  } finally {
+    wifiConnectPending = false;
+    connectButton.disabled = false;
   }
 });
 

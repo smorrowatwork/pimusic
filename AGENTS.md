@@ -25,4 +25,4 @@ Read [README.md](README.md), [docs/architecture.md](docs/architecture.md), [docs
 
 ## Current direction
 
-Wi-Fi provisioning is the next major area. A first slice lets the web UI explicitly enter or exit the existing NetworkManager fallback hotspot through a constrained root helper. The remaining direction is shared provisioning state for automatic fallback, a physical button, and the web UI. See the planned sections of the hardware and history docs; do not mistake them for implemented GPIO or captive-portal behavior.
+Wi-Fi provisioning is the next major area. The existing first slice lets the web UI explicitly enter or exit the NetworkManager fallback hotspot through a constrained root helper, scan/select a network, and return safe connection feedback when the setup hotspot disconnects the browser. It has been manually tested end-to-end. The remaining direction is shared provisioning state for automatic fallback, a physical button, and the web UI. See the planned sections of the hardware and history docs; do not mistake them for implemented GPIO or captive-portal behavior.

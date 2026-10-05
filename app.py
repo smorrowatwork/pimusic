@@ -174,6 +174,19 @@ def saved_wifi_connections():
         })
     return {"connections": connections}
 
+def wifi_command_error(result, fallback):
+    """Return an actionable, credential-safe summary of an nmcli failure."""
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part).lower()
+    if any(marker in output for marker in ("secrets were required", "no secrets", "authentication", "wrong password")):
+        return "Wi-Fi authentication failed. Check the password and try again."
+    if any(marker in output for marker in ("not authorized", "permission denied")):
+        return "PiMusic is not authorized to manage Wi-Fi connections."
+    if any(marker in output for marker in ("unavailable", "unmanaged", "not found", "no network with ssid")):
+        return "That Wi-Fi network or adapter is not currently available."
+    if any(marker in output for marker in ("timed out", "timeout")):
+        return "Timed out while joining the Wi-Fi network. Try again from closer range."
+    return fallback
+
 def connect_wifi(request: WifiConnectRequest):
     status = wifi_status_info()
     ssid = request.ssid.strip()
@@ -201,7 +214,10 @@ def connect_wifi(request: WifiConnectRequest):
             timeout=15,
         )
         if created.returncode != 0:
-            raise HTTPException(status_code=400, detail="Unable to prepare that Wi-Fi connection")
+            raise HTTPException(
+                status_code=400,
+                detail=wifi_command_error(created, "Unable to prepare that Wi-Fi connection"),
+            )
 
     if request.password:
         secured = subprocess.run(
@@ -211,7 +227,10 @@ def connect_wifi(request: WifiConnectRequest):
             timeout=10,
         )
         if secured.returncode != 0:
-            raise HTTPException(status_code=400, detail="Unable to prepare that Wi-Fi connection")
+            raise HTTPException(
+                status_code=400,
+                detail=wifi_command_error(secured, "Unable to prepare that Wi-Fi connection"),
+            )
 
     setup_paused = False
     if hotspot_setup_status()["forced"]:
@@ -233,7 +252,14 @@ def connect_wifi(request: WifiConnectRequest):
             text=True,
             timeout=40,
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
+    except subprocess.TimeoutExpired as error:
+        if setup_paused:
+            hotspot_setup_status("stop")
+        raise HTTPException(
+            status_code=504,
+            detail="Timed out while joining the Wi-Fi network. Try again from closer range.",
+        ) from error
+    except OSError as error:
         if setup_paused:
             hotspot_setup_status("stop")
         raise HTTPException(status_code=503, detail="Unable to activate the Wi-Fi connection") from error
@@ -243,7 +269,10 @@ def connect_wifi(request: WifiConnectRequest):
     if result.returncode != 0:
         if setup_paused:
             hotspot_setup_status("stop")
-        raise HTTPException(status_code=400, detail="Unable to connect to that Wi-Fi network")
+        raise HTTPException(
+            status_code=400,
+            detail=wifi_command_error(result, "Unable to connect to that Wi-Fi network"),
+        )
     connection_status = wifi_status_info()
     if not connection_status["connected"]:
         if setup_paused:
@@ -254,7 +283,11 @@ def connect_wifi(request: WifiConnectRequest):
     # Wi-Fi, so it cannot race the requested connection attempt.
     if setup_paused:
         hotspot_setup_status("stop")
-    return wifi_status_info()
+    return {
+        "wifi": connection_status,
+        "handoff": setup_paused,
+        "message": "PiMusic joined the requested Wi-Fi network.",
+    }
 
 def hotspot_setup_status(action="status"):
     if not Path(HOTSPOT_CONTROL).is_file():

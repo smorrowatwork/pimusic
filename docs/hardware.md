@@ -17,6 +17,10 @@
 
 See [README.md](../README.md) for installation, audio verification, Wi-Fi power-saving commands, hotspot testing, and troubleshooting.
 
+## Development USB recovery
+
+The development Pi may be configured for USB Ethernet gadget recovery on its micro-USB **data** port (the port closest to HDMI). This is a development-only convenience, not an installer requirement: it reserves that port for gadget mode and therefore excludes normal USB peripherals. On Windows, the Raspberry Pi USB Ethernet/RNDIS driver and Internet Connection Sharing can provide a temporary recovery network if ordinary Wi-Fi is unavailable. Preserve the device's normal SSH host-key verification when using that path, and do not add its private network or credentials to the repository.
+
 ## Planned physical controls — not implemented
 
 | Function | GPIO / physical pin | Electrical assumption | Intended behavior |

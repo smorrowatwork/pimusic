@@ -141,7 +141,7 @@ sudo ./system/install-hotspot-fallback.sh
 sudo systemctl start pimusic-hotspot-fallback.service
 ```
 
-Join the configured `pimusic-setup` hotspot and browse to `http://10.42.0.1:8000`. See [system/README.md](system/README.md) for testing, removal, and preferred-profile configuration.
+Join the configured `pimusic-setup` hotspot and browse to `http://10.42.0.1:8000`. When submitting normal Wi-Fi credentials, PiMusic must leave the setup hotspot, so the browser may lose its connection before it receives a response. Rejoin the normal network and open PiMusic at its hostname or current DHCP address. See [system/README.md](system/README.md) for testing, removal, and preferred-profile configuration.
 
 ## Architecture / Why These Settings Matter
 
