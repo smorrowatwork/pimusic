@@ -29,4 +29,4 @@ The development Pi may be configured for USB Ethernet gadget recovery on its mic
 | READY LED | GPIO22 / pin 15 | About 330-ohm series resistor | Off while booting/unavailable; solid when operational; degraded blink is possible later. |
 | SETUP LED | GPIO27 / pin 13 | About 330-ohm series resistor | Off normally; slow blink during provisioning AP; fast blink during Wi-Fi connection; a brief success indication is possible. |
 
-No GPIO code, LED wiring configuration, or button-triggered provisioning is currently in the repository. Treat the table as a hardware/design plan, not deployment instructions.
+No GPIO code, LED wiring configuration, or button-triggered provisioning is currently in the repository. Treat the table as a hardware/design plan, not deployment instructions; the implementation work is tracked in the [project backlog](development-history.md#backlog).

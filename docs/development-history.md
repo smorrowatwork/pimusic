@@ -19,22 +19,45 @@ This is a concise record of verified project context, not a debugging transcript
 ## Known project decisions / context
 
 - PiMusic should behave as a portable appliance.
-- Wi-Fi provisioning is the next major feature area. NetworkManager is the preferred mechanism, rather than a separate hand-maintained hostapd/dnsmasq stack, unless a technical reason requires otherwise.
+- NetworkManager is the preferred Wi-Fi mechanism, rather than a separate hand-maintained hostapd/dnsmasq stack, unless a technical reason requires otherwise.
 - Normal FastAPI/web code should remain unprivileged. Privileged Wi-Fi/network operations should move behind a small, constrained helper/service.
-- Provisioning must eventually be entered by automatic failure to join known Wi-Fi, the GPIO setup button, or the web interface. All three should use the same underlying state/provisioning logic.
-- Intended high-level states: `BOOTING`, `TRYING_WIFI`, `READY`, `PROVISIONING`, and `CONNECTING_WIFI`.
-- Intended flow: try known Wi-Fi; if unavailable, create temporary `PiMusic-Setup` AP; phone joins it; a captive-portal-style UI scans/selects SSID and accepts a password; NetworkManager saves/connects; normal mode resumes.
-- `pimusic.local` through mDNS/Avahi is planned. NFC/QR setup assistance may follow later but is not immediate priority.
 
-## Future consideration: browser playback
+## Backlog
 
-- Browser playback may be useful for listening through the controlling phone or computer's local speakers, headphones, or Bluetooth output. Treat it as an explicit listening mode, not an additional simultaneous player: switching modes must make the active player clear and prevent duplicate audio or diverging queue positions.
-- The Pi should continue to proxy any browser stream so Navidrome credentials remain server-side. This is a lower priority than provisioning state, and its queue ownership, mobile-browser behavior, and Pi bandwidth implications need design before implementation.
+This is the single list of unimplemented PiMusic features and improvements discussed so far. Entries are intentionally not commitments or a delivery order; they record scope and constraints for later prioritization.
 
-## Future consideration: Navidrome server configuration
+### Complete shared Wi-Fi provisioning
 
-- Provide a deliberate way to configure or switch to another Navidrome/Subsonic server. The browser must never receive server credentials; any configuration workflow should validate connectivity on the Pi, store sensitive values in the existing private configuration location, and clearly handle the effect on the active queue and playback state.
+- Evolve the current lightweight provisioning status into a durable, event-driven state flow shared by automatic saved-network fallback, the web UI, and future physical controls. It should cover `BOOTING`, `TRYING_WIFI`, `READY`, `PROVISIONING`, and `CONNECTING_WIFI` without competing NetworkManager activation attempts.
+- Provide a phone-friendly captive-portal-style setup experience when the temporary `PiMusic-Setup` access point is active, and make normal-network discovery dependable through `pimusic.local` mDNS/Avahi.
+- Consider QR or NFC setup assistance only after the core provisioning flow is reliable; neither is a current installation requirement.
+
+### Add GPIO controls and indicators
+
+- Wire and implement the provisioning button on GPIO17 / physical pin 11. A roughly three-second hold should enter provisioning through the same shared state flow as the web and automatic-fallback paths; a short press should do nothing. Evaluate, but do not assume, a longer hold for forgetting saved Wi-Fi.
+- Wire and implement the READY LED on GPIO22 / physical pin 15 and SETUP LED on GPIO27 / physical pin 13, each with an approximately 330-ohm series resistor. Define safe startup/shutdown behavior, debouncing, and state indications: READY solid when operational; SETUP slow blink during the provisioning AP, fast blink during Wi-Fi connection, with optional brief success/degraded indications.
+
+### Improve Bluetooth startup recovery
+
+- Implement and install the constrained root-owned preferred-speaker helper currently described in the README, plus the `pimusic-bluetooth.service` reconnect unit. It should validate and store the selected Bluetooth MAC privately, wait for Bluetooth readiness at boot, and retry connection without granting broad privilege to the web service.
+
+### Make installation paths portable
+
+- Remove the hard-coded `/home/stevenm` queue-state path so the application works for the configured service user on a fresh Pi installation.
+
+### Add optional browser playback
+
+- Support an explicit browser listening mode for the controlling phone or computer's local speakers, headphones, or Bluetooth output. It must not create simultaneous Pi and browser audio or diverging queue positions.
+- Continue to proxy any browser stream through the Pi so Navidrome credentials remain server-side. Design queue ownership, mobile-browser behavior, and Pi bandwidth impact before implementation.
+
+### Configure another Navidrome server
+
+- Provide a deliberate way to configure or switch to another Navidrome/Subsonic server. The browser must never receive server credentials; the Pi should validate connectivity, store sensitive values in the private configuration location, and clearly handle effects on the active queue and playback state.
+
+### Make all card actions phone friendly
+
+- Review every browser-card action for phone use. Apply the Wi-Fi card pattern where appropriate: comfortably sized tap targets, clear separation between adjacent actions, and single-column wrapping on narrow screens. Preserve useful compact layouts on larger screens and do not change action behavior as part of this visual pass.
 
 ## Important boundary
 
-The decisions in the previous section are planned direction, not evidence of implementation. In particular, the current backend directly invokes `nmcli` for Wi-Fi operations, and the repository's fallback service is a separate loop rather than the proposed shared state machine.
+The backlog is planned direction, not evidence of implementation. In particular, the current backend directly invokes `nmcli` for Wi-Fi operations, the repository's fallback service is a separate loop rather than the proposed shared state machine, and no GPIO code or hardware wiring configuration is present.

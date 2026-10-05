@@ -30,6 +30,11 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
 #wifi-details, #wifi-setup-status, #wifi-saved-networks, #wifi-network-list span, #wifi-connect-status, #wifi-scan-status, #bluetooth-scan-status { color: #858995; font-size: .9rem; }
 #wifi-connect-status { display: inline-block; line-height: 1.4; }
 #wifi-details, #wifi-setup-status, #wifi-saved-networks { margin-bottom: 6px; }
+#wifi-controls .card-actions { margin-top: 12px; }
+#wifi-setup-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+#wifi-scan-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
+#wifi-setup-actions button, #wifi-scan-actions button { min-height: 48px; }
+#wifi-scan-status { align-self: center; }
 #wifi-network-list { margin-top: 10px; }
 #wifi-network-list > div, #bluetooth-device-list > div, #playlists > div, #searchResults > div { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid #292c35; }
 #wifi-network-list > div:last-child, #bluetooth-device-list > div:last-child, #playlists > div:last-child, #searchResults > div:last-child { border-bottom: 0; }
@@ -99,6 +104,9 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
   .transport-controls, .secondary-controls, .volume-row { justify-content: center; }
   .card-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
   .card-actions { width: 100%; }
+  #wifi-controls .card-actions { margin-top: 14px; }
+  #wifi-setup-actions, #wifi-scan-actions { grid-template-columns: 1fr; }
+  #wifi-scan-status { min-height: 1.3em; padding: 0 2px; }
   #queue-card .card-heading, #search-card .card-heading, #playlists-card .card-heading, #wifi-controls .card-heading, #bluetooth-controls .card-heading, #system-card .card-heading { flex-direction: row; align-items: center; }
   .search-row button { width: 100%; }
   .song-play-next { padding: 8px 10px; }

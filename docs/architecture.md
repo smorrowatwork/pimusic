@@ -42,4 +42,4 @@ Ports and sockets: the documented web listener is TCP 8000 on all interfaces; MP
 
 ## Planned, not current architecture
 
-The desired provisioning design is a NetworkManager-based state flow shared by automatic Wi-Fi failure, a GPIO button, and the web UI. The repository now has a lightweight shared status contract, but GPIO state handling, captive portal behavior, `pimusic.local` mDNS, and a full event-driven provisioning state machine are not present today.
+The desired provisioning design is a NetworkManager-based state flow shared by automatic Wi-Fi failure, a GPIO button, and the web UI. The repository now has a lightweight shared status contract, but GPIO state handling, captive portal behavior, `pimusic.local` mDNS, and a full event-driven provisioning state machine are not present today. The unimplemented work is tracked in the [project backlog](development-history.md#backlog).
