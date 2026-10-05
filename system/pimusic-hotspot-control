@@ -4,20 +4,34 @@ set -euo pipefail
 CONFIG=/etc/pimusic/hotspot-fallback.conf
 RUNTIME_DIR=/run/pimusic
 FORCE_FILE="$RUNTIME_DIR/force-hotspot"
+CONNECTING_FILE="$RUNTIME_DIR/connecting-wifi"
 SERVICE=pimusic-hotspot-fallback.service
 
 json_status() {
-  local service_active=false forced=false hotspot_active=false connection
+  local service_active=false forced=false hotspot_active=false connection state reason
   if systemctl is-active --quiet "$SERVICE"; then service_active=true; fi
   if [[ -f "$FORCE_FILE" ]]; then forced=true; fi
   connection=$(nmcli -g GENERAL.CONNECTION device show "$WIFI_DEVICE" 2>/dev/null | head -n 1 || true)
   if [[ "$connection" == "$HOTSPOT_CONNECTION" ]]; then hotspot_active=true; fi
-  printf '{"installed":true,"service_active":%s,"forced":%s,"hotspot_active":%s}\n' \
-    "$service_active" "$forced" "$hotspot_active"
+  if [[ -f "$CONNECTING_FILE" ]]; then
+    state=CONNECTING_WIFI
+    reason=connection_requested
+  elif [[ "$hotspot_active" == true || "$forced" == true ]]; then
+    state=PROVISIONING
+    reason=setup_hotspot
+  elif [[ -n "$connection" && "$connection" != "--" ]]; then
+    state=READY
+    reason=normal_wifi
+  else
+    state=TRYING_WIFI
+    reason=saved_wifi
+  fi
+  printf '{"installed":true,"service_active":%s,"forced":%s,"hotspot_active":%s,"state":"%s","reason":"%s"}\n' \
+    "$service_active" "$forced" "$hotspot_active" "$state" "$reason"
 }
 
 if [[ ! -r "$CONFIG" ]]; then
-  printf '{"installed":false,"service_active":false,"forced":false,"hotspot_active":false}\n'
+  printf '{"installed":false,"service_active":false,"forced":false,"hotspot_active":false,"state":"UNAVAILABLE","reason":"not_installed"}\n'
   exit 0
 fi
 source "$CONFIG"
@@ -28,17 +42,20 @@ case "${1:-status}" in
     ;;
   start)
     install -d -m 755 "$RUNTIME_DIR"
+    rm -f "$CONNECTING_FILE"
     touch "$FORCE_FILE"
     systemctl restart "$SERVICE"
     json_status
     ;;
   stop)
-    rm -f "$FORCE_FILE"
+    rm -f "$FORCE_FILE" "$CONNECTING_FILE"
     systemctl restart "$SERVICE"
     json_status
     ;;
   prepare-connect)
+    install -d -m 755 "$RUNTIME_DIR"
     rm -f "$FORCE_FILE"
+    touch "$CONNECTING_FILE"
     systemctl stop "$SERVICE"
     json_status
     ;;

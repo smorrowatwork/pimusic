@@ -233,7 +233,8 @@ def connect_wifi(request: WifiConnectRequest):
             )
 
     setup_paused = False
-    if hotspot_setup_status()["forced"]:
+    setup_status = hotspot_setup_status()
+    if setup_status.get("state") == "PROVISIONING":
         hotspot_setup_status("prepare-connect")
         setup_paused = True
 
@@ -296,6 +297,8 @@ def hotspot_setup_status(action="status"):
             "service_active": False,
             "forced": False,
             "hotspot_active": False,
+            "state": "UNAVAILABLE",
+            "reason": "not_installed",
         }
 
     result = subprocess.run(

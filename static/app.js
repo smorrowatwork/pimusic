@@ -258,17 +258,17 @@ function renderWifiSetupStatus(setup) {
     stop.disabled = true;
     return;
   }
-  if (setup.forced) {
-    status.textContent = setup.hotspot_active
-      ? "Setup hotspot is active."
-      : "Starting setup hotspot…";
-  } else if (setup.service_active) {
-    status.textContent = "Automatic Wi-Fi fallback is enabled.";
-  } else {
-    status.textContent = "Setup hotspot is ready but fallback is not running.";
-  }
-  start.disabled = wifiSetupPending || setup.forced;
-  stop.disabled = wifiSetupPending || !setup.forced;
+  const stateMessages = {
+    READY: "Ready: normal Wi-Fi is connected.",
+    TRYING_WIFI: "Trying saved Wi-Fi networks…",
+    PROVISIONING: setup.hotspot_active
+      ? "Provisioning: setup hotspot is active."
+      : "Provisioning: starting setup hotspot…",
+    CONNECTING_WIFI: "Connecting to the selected Wi-Fi network…",
+  };
+  status.textContent = stateMessages[setup.state] || "Setup hotspot status unavailable.";
+  start.disabled = wifiSetupPending || setup.forced || setup.state === "CONNECTING_WIFI";
+  stop.disabled = wifiSetupPending || !setup.forced || setup.state === "CONNECTING_WIFI";
 }
 
 async function refreshWifiSetupStatus() {
@@ -1035,6 +1035,7 @@ async function loadAlbum(albumId, artistId) {
     loadBluetoothDevices();
     refreshWifiStatus();
     refreshWifiSetupStatus();
+    setInterval(refreshWifiSetupStatus, 10000);
     refreshSystemStatus();
     loadSavedWifiNetworks();
 

@@ -52,6 +52,11 @@ than repeatedly interrupting connected setup clients to retry saved Wi-Fi.
 The web connection flow briefly pauses the fallback service while NetworkManager
 joins the selected Wi-Fi network, then resumes normal fallback afterward.
 
+The Wi-Fi card reports the shared provisioning status exposed by the constrained
+helper: `READY` when normal Wi-Fi is connected, `TRYING_WIFI` while fallback is
+looking for a saved network, `PROVISIONING` while the hotspot is active or being
+requested, and `CONNECTING_WIFI` during an explicit web connection attempt.
+
 To stop or remove the feature:
 
 ```bash
