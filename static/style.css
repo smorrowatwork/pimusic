@@ -9,7 +9,7 @@ h1 { margin: 0 0 24px; font-size: 2.4rem; letter-spacing: -1px; }
 h2 { margin: 0; color: #e8e8ef; font-size: 1.35rem; }
 h3 { color: #c8c8d2; }
 
-button { margin: 0; padding: 10px 15px; border: 0; border-radius: 10px; background: #272a33; color: #fff; font-size: .95rem; cursor: pointer; transition: background .15s ease, transform .15s ease, box-shadow .15s ease; }
+button { min-height: 44px; margin: 0; padding: 10px 15px; border: 0; border-radius: 10px; background: #272a33; color: #fff; font-size: .95rem; cursor: pointer; transition: background .15s ease, transform .15s ease, box-shadow .15s ease; }
 button:hover { background: #393d49; transform: translateY(-1px); }
 button:active { transform: translateY(1px); }
 button:disabled { opacity: .45; cursor: default; transform: none; }
@@ -107,10 +107,20 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
   #wifi-controls .card-actions { margin-top: 14px; }
   #wifi-setup-actions, #wifi-scan-actions { grid-template-columns: 1fr; }
   #wifi-scan-status { min-height: 1.3em; padding: 0 2px; }
-  #queue-card .card-heading, #search-card .card-heading, #playlists-card .card-heading, #wifi-controls .card-heading, #bluetooth-controls .card-heading, #system-card .card-heading { flex-direction: row; align-items: center; }
+  #queue-card .card-heading, #search-card .card-heading, #playlists-card .card-heading, #system-card .card-heading { flex-direction: row; align-items: center; }
+  #wifi-controls .card-heading, #bluetooth-controls .card-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  #wifi-controls .connection-status, #bluetooth-controls .connection-status { grid-column: 1 / -1; width: 100%; }
+  #wifiToggleButton, #bluetoothToggleButton { grid-column: 2; grid-row: 1; }
+  .card-actions button, .queue-content-actions button { width: 100%; min-height: 48px; }
   .search-row button { width: 100%; }
-  .song-play-next { padding: 8px 10px; }
-  .collection-actions button { flex: 1 1 130px; }
+  #bluetooth-device-list > div { align-items: stretch; flex-wrap: wrap; }
+  #bluetooth-device-list > div > span { flex-basis: 100%; overflow-wrap: anywhere; }
+  #bluetooth-device-list > div > button { width: 100%; min-height: 48px; }
+  .song-row { align-items: stretch; flex-wrap: wrap; }
+  .song-row-label { flex-basis: 100%; }
+  .song-play-next { width: 100%; min-height: 44px; padding: 8px 10px; }
+  .collection-actions { display: grid; grid-template-columns: 1fr; width: 100%; }
+  .collection-actions button { min-height: 48px; }
   #queue > div { flex-wrap: nowrap; gap: 8px; }
   .queue-label { flex-basis: auto; }
   .queue-actions { margin-left: 0; }

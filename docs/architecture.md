@@ -43,3 +43,15 @@ Ports and sockets: the documented web listener is TCP 8000 on all interfaces; MP
 ## Planned, not current architecture
 
 The desired provisioning design is a NetworkManager-based state flow shared by automatic Wi-Fi failure, a GPIO button, and the web UI. The repository now has a lightweight shared status contract, but GPIO state handling, captive portal behavior, and a full event-driven provisioning state machine are not present today. Normal-network discovery uses the device hostname's mDNS name (for example, `pimusic.local`). The unimplemented work is tracked in the [project backlog](development-history.md#backlog).
+
+### Proposed browser listening mode
+
+Browser listening must be an explicit, exclusive output mode. The PiMusic backend will own one canonical queue, including its song IDs, current item, position, paused state, repeat mode, and shuffle order. MPV and a browser audio element will be renderers of that one queue; they will not keep independent playlists.
+
+Only one renderer may play at a time. When the user switches from **Pi speaker** to **This browser**, PiMusic captures the canonical playback state, pauses MPV, and instructs the selected browser to begin the same song at the captured position if it was playing. The reverse switch pauses the browser first, then resumes MPV at that position. A failed handoff leaves both renderers paused and reports the failure; PiMusic must never silently create simultaneous audio.
+
+The browser will request audio only from a PiMusic streaming endpoint. The backend will proxy Navidrome audio, including byte-range requests needed for seeking, so Navidrome credentials and authenticated stream URLs never reach the browser. Browser volume is local to the listening device and must not overwrite the Pi's persisted MPV volume.
+
+The browser that selected **This browser** holds a short-lived playback lease renewed while the page remains active. Other open PiMusic pages remain controllers of the same queue but cannot start their own audio. If the lease expires because the listening page closes or loses the network, playback pauses rather than unexpectedly returning to a Pi speaker. After a Pi restart, the queue is recovered but browser mode is not: the appliance starts with its Pi renderer selected and paused until a user chooses an output.
+
+This requires promoting the queue out of MPV into backend-owned persisted state before browser playback is implemented. The present MPV playlist remains the implementation source of truth until that migration is complete.

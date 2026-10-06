@@ -48,7 +48,8 @@ This is the single list of unimplemented PiMusic features and improvements discu
 ### Add optional browser playback
 
 - Support an explicit browser listening mode for the controlling phone or computer's local speakers, headphones, or Bluetooth output. It must not create simultaneous Pi and browser audio or diverging queue positions.
-- Continue to proxy any browser stream through the Pi so Navidrome credentials remain server-side. Design queue ownership, mobile-browser behavior, and Pi bandwidth impact before implementation.
+- Keep one backend-owned canonical queue and make MPV or one leased browser audio element its exclusive renderer. Switch output by pausing the old renderer and resuming the same track and position on the new one; if the handoff fails, leave both paused. Other open pages remain queue controllers, not additional listeners.
+- Continue to proxy browser audio, including range requests for seeking, through the Pi so Navidrome credentials remain server-side. Browser volume is local and separate from persisted Pi volume. A lost browser lease pauses playback, and browser mode never survives a Pi restart.
 
 ### Configure another Navidrome server
 
