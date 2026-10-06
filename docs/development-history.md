@@ -29,7 +29,7 @@ This is the single list of unimplemented PiMusic features and improvements discu
 ### Complete shared Wi-Fi provisioning
 
 - Evolve the current lightweight provisioning status into a durable, event-driven state flow shared by automatic saved-network fallback, the web UI, and future physical controls. It should cover `BOOTING`, `TRYING_WIFI`, `READY`, `PROVISIONING`, and `CONNECTING_WIFI` without competing NetworkManager activation attempts.
-- Provide a phone-friendly captive-portal-style setup experience when the temporary `PiMusic-Setup` access point is active, and make normal-network discovery dependable through `pimusic.local` mDNS/Avahi.
+- Provide a phone-friendly captive-portal-style setup experience when the temporary `PiMusic-Setup` access point is active. Normal-network discovery is available through the device hostname's mDNS name (for example, `pimusic.local`).
 - Consider QR or NFC setup assistance only after the core provisioning flow is reliable; neither is a current installation requirement.
 
 ### Add GPIO controls and indicators
