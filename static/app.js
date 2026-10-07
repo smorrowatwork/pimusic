@@ -564,6 +564,9 @@ browserAudio.addEventListener("play", reportBrowserProgress);
 browserAudio.addEventListener("pause", () => {
   if (!browserAudio.dataset.loading) reportBrowserProgress();
 });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) reportBrowserProgress();
+});
 setInterval(reportBrowserProgress, 5000);
 
 function formatTime(seconds) {

@@ -129,7 +129,16 @@ wpctl status -n
 bluetoothctl devices Connected
 ```
 
-Click a song to replace the queue. Album and playlist pages offer **Play**, **Append to Queue**, and **Mix into Queue**. **Shuffle Upcoming** preserves the current track and randomizes only tracks that follow it. Choose **Listen in This Browser** to play the current queue through the controlling device; choose **Play on Pi** to hand it back to the Pi at the same track and position. Only the browser that starts browser listening can hand playback back, and closing or losing that browser pauses playback instead of unexpectedly starting the Pi speaker.
+To reconnect that selected speaker automatically after a Pi reboot, install the optional constrained helper and system service once:
+
+```bash
+chmod +x system/install-bluetooth-reconnect.sh
+sudo ./system/install-bluetooth-reconnect.sh
+```
+
+The Bluetooth card saves the selected speaker's MAC address through the installed helper. At boot, the reconnect service waits for BlueZ and retries that device without giving the web service general root or Bluetooth-management access. Each reconnect cycle is bounded to about one minute and retries later if the speaker is unavailable. Test a saved speaker without rebooting with `sudo systemctl start pimusic-bluetooth.service`.
+
+Click a song to replace the queue. Album and playlist pages offer **Play**, **Append to Queue**, and **Mix into Queue**. **Shuffle Upcoming** preserves the current track and randomizes only tracks that follow it. Choose **Listen in This Browser** to play the current queue through the controlling device; choose **Play on Pi** to hand it back to the Pi at the same track and position. Only the browser that starts browser listening can hand playback back. A browser may remain in the background while listening; if it stays disconnected for five minutes, playback pauses instead of unexpectedly starting the Pi speaker.
 
 ### 5. Optional fallback hotspot
 
@@ -172,13 +181,7 @@ PiMusic uses `bluetoothctl` for Bluetooth management and `wpctl` for PipeWire si
 
 RTKit warnings from PipeWire can be non-fatal. Treat them as a problem only when audio is also failing.
 
-PiMusic saves the preferred Bluetooth MAC through `/usr/local/bin/pimusic-set-bluetooth-device`, which should validate the address and write `/etc/pimusic/bluetooth.conf`. Give the web-service user access only to that exact root helper:
-
-```sudoers
-YOUR_USER ALL=(root) NOPASSWD: /usr/local/bin/pimusic-set-bluetooth-device
-```
-
-For automatic speaker reconnect after boot, install a root-owned helper that reads this file, waits for `bluetoothctl show` to report `Powered: yes`, and retries `bluetoothctl connect`. Run it from a oneshot `pimusic-bluetooth.service` ordered after `bluetooth.service` and `network-online.target`.
+The optional `system/install-bluetooth-reconnect.sh` installer provides `/usr/local/bin/pimusic-set-bluetooth-device`, which validates and writes the selected MAC privately to `/etc/pimusic/bluetooth.conf`. It grants the web-service user passwordless access only to that exact helper. Its companion `pimusic-bluetooth.service` waits for BlueZ and retries `bluetoothctl connect` at boot.
 
 ### Wi-Fi power saving
 

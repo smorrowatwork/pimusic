@@ -1,0 +1,28 @@
+#!/bin/bash
+set -euo pipefail
+
+CONFIG_FILE=/etc/pimusic/bluetooth.conf
+MAX_ATTEMPTS=10
+RETRY_SECONDS=2
+CONNECT_TIMEOUT=4
+
+[[ -r "$CONFIG_FILE" ]] || exit 0
+PREFERRED_BLUETOOTH_MAC=$(tr -d '\r\n' < "$CONFIG_FILE")
+
+if ! [[ "$PREFERRED_BLUETOOTH_MAC" =~ ^([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}$ ]]; then
+  echo "PiMusic preferred Bluetooth address is invalid" >&2
+  exit 2
+fi
+
+for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)); do
+  if bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; then
+    if bluetoothctl info "$PREFERRED_BLUETOOTH_MAC" 2>/dev/null | grep -q 'Connected: yes'; then
+      exit 0
+    fi
+    timeout "$CONNECT_TIMEOUT" bluetoothctl connect "$PREFERRED_BLUETOOTH_MAC" >/dev/null 2>&1 || true
+  fi
+  sleep "$RETRY_SECONDS"
+done
+
+echo "Unable to reconnect PiMusic preferred Bluetooth device" >&2
+exit 1

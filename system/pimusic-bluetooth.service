@@ -1,0 +1,15 @@
+[Unit]
+Description=Reconnect PiMusic preferred Bluetooth speaker
+Wants=bluetooth.service network-online.target
+After=bluetooth.service network-online.target
+ConditionPathExists=/etc/pimusic/bluetooth.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/pimusic/pimusic-bluetooth-reconnect
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=75
+
+[Install]
+WantedBy=multi-user.target

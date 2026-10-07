@@ -78,7 +78,10 @@ HOTSPOT_CONTROL = "/usr/local/bin/pimusic-hotspot-control"
 mpv_lock = RLock()
 playback_lock = RLock()
 PIMUSIC_VERSION = "1.0"
-BROWSER_LEASE_SECONDS = 15
+# Background mobile tabs may suspend JavaScript timers while their audio is
+# legitimately still playing. Keep a bounded safety window rather than
+# treating a brief tab switch as a disconnected listener.
+BROWSER_LEASE_SECONDS = 5 * 60
 
 def split_nmcli_fields(line: str):
     fields = []
@@ -1023,6 +1026,7 @@ def bluetooth_connect_device(request: BluetoothDeviceRequest):
     save_result = subprocess.run(
         [
             "sudo",
+            "-n",
             "/usr/local/bin/pimusic-set-bluetooth-device",
             address,
         ],
@@ -1923,6 +1927,7 @@ def bluetooth_pair_device(request: BluetoothDeviceRequest):
     save_result = subprocess.run(
         [
             "sudo",
+            "-n",
             "/usr/local/bin/pimusic-set-bluetooth-device",
             address,
         ],

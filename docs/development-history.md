@@ -13,7 +13,8 @@ This is a concise record of verified project context, not a debugging transcript
 - When `pimusic-setup` is active, the fallback service must not repeatedly reactivate it or attempt a competing Wi-Fi activation: either action disconnects setup clients. The web connection flow pauses fallback during its explicit NetworkManager connection attempt, then resumes it once the attempt has completed.
 - The setup-hotspot flow has been tested end-to-end. Submitting normal Wi-Fi credentials necessarily removes the setup access point, so the browser must treat a post-submission network loss as expected and direct the user back to normal Wi-Fi. NetworkManager failures are summarized into safe authentication, authorization, availability, or timeout messages; raw command output is not sent to the browser.
 - The constrained hotspot helper now provides a lightweight shared provisioning status: `READY`, `TRYING_WIFI`, `PROVISIONING`, or `CONNECTING_WIFI`. It is derived from NetworkManager and a root-owned runtime marker, and is consumed by the web UI. This is a foundation for the later physical button, not a complete event-driven state machine.
-- Browser listening is an explicit, leased output mode. MPV remains paused while one browser renders the same queue through a PiMusic stream proxy; progress is mirrored into MPV for queue operations and handoff back to the Pi. Browser volume is local, and an expired browser lease pauses playback.
+- Browser listening is an explicit, leased output mode. MPV remains paused while one browser renders the same queue through a PiMusic stream proxy; progress is mirrored into MPV for queue operations and handoff back to the Pi. Browser volume is local, and an expired five-minute browser lease pauses playback; the window accommodates background-tab timer throttling.
+- The optional Bluetooth reconnect installer saves a selected speaker through one root-owned MAC-validation helper and retries that trusted device at boot. The web service has no broader Bluetooth or root permission.
 - The development Pi has a retained USB Ethernet gadget recovery path. It is useful when normal Wi-Fi is unavailable, but it is a local development-machine configuration rather than a PiMusic installation feature.
 - Full VS Code Remote plus Codex workloads on the Pi have exhausted RAM/zram and made it nearly unresponsive. Prefer development on a PC and use the Pi mainly for deployment and test; keep runtime dependencies lightweight.
 
@@ -37,14 +38,6 @@ This is the single list of unimplemented PiMusic features and improvements discu
 
 - Wire and implement the provisioning button on GPIO17 / physical pin 11. A roughly three-second hold should enter provisioning through the same shared state flow as the web and automatic-fallback paths; a short press should do nothing. Evaluate, but do not assume, a longer hold for forgetting saved Wi-Fi.
 - Wire and implement the READY LED on GPIO22 / physical pin 15 and SETUP LED on GPIO27 / physical pin 13, each with an approximately 330-ohm series resistor. Define safe startup/shutdown behavior, debouncing, and state indications: READY solid when operational; SETUP slow blink during the provisioning AP, fast blink during Wi-Fi connection, with optional brief success/degraded indications.
-
-### Improve Bluetooth startup recovery
-
-- Implement and install the constrained root-owned preferred-speaker helper currently described in the README, plus the `pimusic-bluetooth.service` reconnect unit. It should validate and store the selected Bluetooth MAC privately, wait for Bluetooth readiness at boot, and retry connection without granting broad privilege to the web service.
-
-### Make installation paths portable
-
-- Remove the hard-coded `/home/stevenm` queue-state path so the application works for the configured service user on a fresh Pi installation.
 
 ### Configure another Navidrome server
 

@@ -1,0 +1,21 @@
+#!/bin/bash
+set -euo pipefail
+
+CONFIG_DIR=/etc/pimusic
+CONFIG_FILE="$CONFIG_DIR/bluetooth.conf"
+ADDRESS=${1:-}
+
+if [[ $# -ne 1 ]] || ! [[ "$ADDRESS" =~ ^([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}$ ]]; then
+  echo "Usage: $0 AA:BB:CC:DD:EE:FF" >&2
+  exit 2
+fi
+
+ADDRESS=${ADDRESS^^}
+install -d -m 755 "$CONFIG_DIR"
+
+temporary=$(mktemp "$CONFIG_DIR/.bluetooth.conf.XXXXXX")
+trap 'rm -f "$temporary"' EXIT
+printf '%s\n' "$ADDRESS" > "$temporary"
+chmod 600 "$temporary"
+chown root:root "$temporary"
+mv -f "$temporary" "$CONFIG_FILE"

@@ -23,7 +23,7 @@ Navidrome                         persistent MPV process
 - Reads `NAVIDROME_BASE`, `NAVIDROME_USER`, `NAVIDROME_SALT`, and `NAVIDROME_TOKEN` from its environment. The documented source is a private `~/.config/pimusic/pimusic.env` file.
 - Proxies Navidrome/Subsonic library, search, cover-art, and streaming requests so credentials are not exposed to the browser.
 - Controls one idle MPV process through its Unix-domain JSON IPC socket at `/tmp/pimusic-mpv.sock`, rather than launching a player per track.
-- Maintains queue metadata, recovery state, shuffle state, and volume JSON files under `~/.config/pimusic/`. The current code has a hard-coded queue-state base path for `/home/stevenm`; deployment changes should review that assumption.
+- Maintains queue metadata, recovery state, shuffle state, and volume JSON files under the service user's `~/.config/pimusic/` directory.
 - On FastAPI startup, restores saved queue and playback state only when MPV has an empty playlist, then restores saved volume.
 - Provides Wi-Fi status/scan/connect and saved-profile endpoints through `nmcli`; connection failures are mapped to credential-safe, actionable messages rather than raw command output. A successful connection response includes the active Wi-Fi address when it can reach the browser. Bluetooth scanning, pairing, trust, connection, and PipeWire sink selection use `bluetoothctl` and `wpctl`.
 
@@ -36,7 +36,7 @@ The vanilla JavaScript client calls `/api/*` endpoints for playback, queue editi
 - The README specifies `pimusic-mpv.service` and `pimusic-web.service` as user units, enabled with `loginctl enable-linger` so they run at boot without an interactive login.
 - `system/pimusic-hotspot-fallback.service` is an optional system service. Its installed script repeatedly tries a preferred/saved NetworkManager Wi-Fi profile and starts a `pimusic-setup` shared-IP hotspot if none connects.
 - The fallback installer also installs `/usr/local/bin/pimusic-hotspot-control` and grants the PiMusic user passwordless access to that exact helper. The helper is the current provisioning-status source: it reports `READY`, `TRYING_WIFI`, `PROVISIONING`, or `CONNECTING_WIFI` from NetworkManager and a root-owned runtime marker. The web API uses it only to read that status or explicitly enter/exit setup mode; it does not receive broad systemd or NetworkManager `sudo` access.
-- The README describes, but this repository does **not** provide, a root-owned `/usr/local/bin/pimusic-set-bluetooth-device` helper and an optional `pimusic-bluetooth.service` reconnect unit. The backend currently calls that helper when saving a selected speaker.
+- `system/install-bluetooth-reconnect.sh` installs the root-owned `/usr/local/bin/pimusic-set-bluetooth-device` helper, a narrowly scoped sudoers rule for the web-service user, and `pimusic-bluetooth.service`. The helper validates and privately saves the selected MAC; the service retries its BlueZ connection at boot.
 
 Ports and sockets: the documented web listener is TCP 8000 on all interfaces; MPV IPC is `/tmp/pimusic-mpv.sock`; the documented fallback hotspot normally uses `10.42.0.1` through NetworkManager shared IPv4.
 
@@ -52,6 +52,6 @@ Only one renderer may play at a time. When the user switches from **Pi speaker**
 
 The browser will request audio only from a PiMusic streaming endpoint. The backend will proxy Navidrome audio, including byte-range requests needed for seeking, so Navidrome credentials and authenticated stream URLs never reach the browser. Browser volume is local to the listening device and must not overwrite the Pi's persisted MPV volume.
 
-The browser that selected **This browser** holds a short-lived playback lease renewed while the page remains active. Other open PiMusic pages remain controllers of the same queue but cannot start their own audio. If the lease expires because the listening page closes or loses the network, playback pauses rather than unexpectedly returning to a Pi speaker. After a Pi restart, the queue is recovered but browser mode is not: the appliance starts with its Pi renderer selected and paused until a user chooses an output.
+The browser that selected **This browser** holds a five-minute playback lease renewed while the page is active and immediately when it returns to the foreground. The window accommodates mobile/browser timer throttling while a listening tab is in the background. Other open PiMusic pages remain controllers of the same queue but cannot start their own audio. If the lease expires because the listening page stays closed or disconnected, playback pauses rather than unexpectedly returning to a Pi speaker. After a Pi restart, the queue is recovered but browser mode is not: the appliance starts with its Pi renderer selected and paused until a user chooses an output.
 
-The backend owns the output route and short-lived browser lease. A later internal refactor may make its queue representation independently authoritative, but the current design already preserves one queue and one active renderer without duplicating stream credentials or audio.
+The backend owns the output route and bounded browser lease. A later internal refactor may make its queue representation independently authoritative, but the current design already preserves one queue and one active renderer without duplicating stream credentials or audio.
