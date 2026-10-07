@@ -932,6 +932,58 @@ def render_queue_to_mpv():
         mpv_command(["set_property", "pause", True if browser_playback["mode"] == "browser" else state["paused"]])
 
 
+def mpv_queue_song_ids():
+    playlist = mpv_property("playlist")
+    if playlist is None:
+        return None
+    song_ids = []
+    for entry in playlist:
+        try:
+            song_id = parse_qs(urlparse(entry.get("filename", "")).query).get("id", [None])[0]
+        except Exception:
+            song_id = None
+        if song_id is None:
+            return None
+        song_ids.append(str(song_id))
+    return song_ids
+
+
+def reorder_mpv_renderer(previous_items, updated_items):
+    """Mirror a backend reorder without replacing the active MPV stream."""
+    previous_ids = [item["queue_id"] for item in previous_items]
+    updated_ids = [item["queue_id"] for item in updated_items]
+    if set(previous_ids) != set(updated_ids) or len(previous_ids) != len(updated_ids):
+        return False
+    if mpv_queue_song_ids() != [item["song_id"] for item in previous_items]:
+        return False
+
+    renderer_order = previous_ids[:]
+    with mpv_lock:
+        for target, queue_id in enumerate(updated_ids):
+            source = renderer_order.index(queue_id)
+            if source == target:
+                continue
+            # MPV inserts before the target in the original playlist.
+            insertion = target + 1 if source < target else target
+            result = mpv_command(["playlist-move", source, insertion])
+            if result.get("error") != "success":
+                return False
+            renderer_order.insert(target, renderer_order.pop(source))
+    return True
+
+
+def append_to_mpv_renderer(previous_items, additions):
+    """Append new backend entries without replacing the active MPV stream."""
+    if mpv_queue_song_ids() != [item["song_id"] for item in previous_items]:
+        return False
+    with mpv_lock:
+        for item in additions:
+            result = mpv_command(["loadfile", navidrome_stream_url(item["song_id"]), "append"])
+            if result.get("error") != "success":
+                return False
+    return True
+
+
 def sync_queue_from_mpv():
     """Record Pi-renderer progress without ever taking queue order from MPV."""
     if browser_playback["mode"] == "browser":
@@ -992,7 +1044,11 @@ def add_songs_to_queue(songs, mix=False):
             queue_state["items"].extend(additions)
         queue_state["shuffle"] = False
     save_queue_state()
-    render_queue_to_mpv()
+    updated = queue_snapshot()["items"]
+    if not append_to_mpv_renderer(state["items"], additions):
+        render_queue_to_mpv()
+    elif mix and not reorder_mpv_renderer(state["items"] + additions, updated):
+        render_queue_to_mpv()
     return {"status": "mixed" if mix else "appended", "queue_length": len(additions)}
 
 
@@ -1329,7 +1385,8 @@ def move_queue_position(position: int, request: QueueMoveRequest):
             queue_state["current_index"] = next((i for i, candidate in enumerate(queue_state["items"])
                                                   if candidate["queue_id"] == current_id), -1)
         save_queue_state()
-        render_queue_to_mpv()
+        if not reorder_mpv_renderer(state["items"], queue_snapshot()["items"]):
+            render_queue_to_mpv()
     return {"status": "moved", "position": target}
 
 @app.delete("/api/player/queue")
@@ -1359,7 +1416,12 @@ def remove_queue_position(position: int, queue_id: str):
             queue_state["current_index"] = next((i for i, item in enumerate(queue_state["items"])
                                                   if item["queue_id"] == current_id), -1)
     save_queue_state()
-    render_queue_to_mpv()
+    if was_current or mpv_queue_song_ids() != [item["song_id"] for item in state["items"]]:
+        render_queue_to_mpv()
+    else:
+        result = mpv_command(["playlist-remove", position])
+        if result.get("error") != "success":
+            render_queue_to_mpv()
     if browser_lease_active() and was_current:
         browser_playback["position"] = 0.0
         browser_state_changed()
@@ -1640,7 +1702,8 @@ def toggle_shuffle():
         queue_state["items"][queue_state["current_index"] + 1:] = upcoming
         queue_state["shuffle"] = True
     save_queue_state()
-    render_queue_to_mpv()
+    if not reorder_mpv_renderer(state["items"], queue_snapshot()["items"]):
+        render_queue_to_mpv()
 
     return {
         "shuffle": True
@@ -1732,10 +1795,16 @@ def play_next_song(song_id: str):
         result = play_song_queue([song])
         return {"status": result["status"], "song_id": song_id, "inserted": False}
     with queue_lock:
-        queue_state["items"].insert(queue_state["current_index"] + 1, queue_item_from_song(song))
+        addition = queue_item_from_song(song)
+        queue_state["items"].insert(queue_state["current_index"] + 1, addition)
         queue_state["shuffle"] = False
     save_queue_state()
-    render_queue_to_mpv()
+    if mpv_queue_song_ids() == [item["song_id"] for item in state["items"]]:
+        result = mpv_command(["loadfile", navidrome_stream_url(addition["song_id"]), "insert-next"])
+        if result.get("error") != "success":
+            render_queue_to_mpv()
+    else:
+        render_queue_to_mpv()
     return {"status": "queued_next", "song_id": song_id, "inserted": True}
 
 @app.post("/api/player/play/{song_id}")

@@ -185,7 +185,7 @@ MPV, PipeWire, and PiMusic run in the same user session. `loginctl enable-linger
 
 ### Persistent MPV process
 
-MPV runs with `--idle=yes` and exposes `/tmp/pimusic-mpv.sock`. The FastAPI backend sends JSON IPC commands to that one process instead of launching a player per track. The backend persists the authoritative queue and rebuilds MPV from it after a service restart, while keeping Pi-output controls responsive.
+MPV runs with `--idle=yes` and exposes `/tmp/pimusic-mpv.sock`. The FastAPI backend sends JSON IPC commands to that one process instead of launching a player per track. The backend persists the authoritative queue and rebuilds MPV from it after a service restart or a playback-changing action; ordinary add, remove, reorder, and shuffle operations update MPV in place without restarting the active track.
 
 PiMusic stores the ordered queue, stable queue-entry IDs, current position, paused state, shuffle state, and volume under `~/.config/pimusic/`. If MPV later starts empty, PiMusic restores it as the Pi renderer from that queue state.
 

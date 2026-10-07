@@ -5,7 +5,7 @@ This is a concise record of verified project context, not a debugging transcript
 ## Established implementation and lessons
 
 - PiMusic's working core use case is Navidrome to MPV to a local, commonly Bluetooth, speaker.
-- A persistent idle MPV process and its IPC socket keep Pi-output controls responsive. The backend owns the persisted queue, including stable queue-entry IDs, order, current track, position, paused state, and shuffle state; MPV is rebuilt as its Pi-output renderer after queue changes or recovery.
+- A persistent idle MPV process and its IPC socket keep Pi-output controls responsive. The backend owns the persisted queue, including stable queue-entry IDs, order, current track, position, paused state, and shuffle state; MPV is rebuilt for recovery or a playback-changing action, while ordinary add, remove, reorder, and shuffle operations update its playlist in place.
 - Headless user services need `loginctl enable-linger`; MPV, PipeWire, and the backend need to share the intended user session.
 - Bluetooth pairing/connection is handled with `bluetoothctl`, while PipeWire output selection is handled with `wpctl`. The project deliberately does not depend on `pactl` for this.
 - The Pi Zero 2 W's shared Wi-Fi/Bluetooth radio and limited resources matter in deployment. Check power throttling and Wi-Fi power saving when Bluetooth is unreliable.
