@@ -16,6 +16,8 @@ This is a concise record of verified project context, not a debugging transcript
 - Browser listening is an explicit, leased output mode. MPV remains paused while one browser renders the same queue through a PiMusic stream proxy; progress is mirrored into MPV for queue operations and handoff back to the Pi. Browser volume is local, and an expired five-minute browser lease pauses playback; the window accommodates background-tab timer throttling.
 - The optional Bluetooth reconnect installer saves a selected speaker through one root-owned MAC-validation helper and retries that trusted device at boot. The web service has no broader Bluetooth or root permission.
 - Navidrome server changes take a server address, username, and password from the local web UI; the Pi generates the salt and Subsonic token, validates them, and atomically saves only the derived credentials in the private PiMusic environment file. A successful change is applied only after the active queue has been cleared.
+- The optional `pimusic-gpio.service` runs as the PiMusic user and owns the provision button plus READY/SETUP LEDs. It consumes the same constrained provisioning-status helper as the web UI, and a three-second GPIO17 hold invokes only that helper's setup-start action.
+- Bluetooth speaker discovery is serialized in the backend and runs for up to 30 seconds; the UI disables its scan action while that request is active. This avoids overlapping BlueZ discovery requests, which can leave the adapter unable to scan until reset.
 - The development Pi has a retained USB Ethernet gadget recovery path. It is useful when normal Wi-Fi is unavailable, but it is a local development-machine configuration rather than a PiMusic installation feature.
 - Full VS Code Remote plus Codex workloads on the Pi have exhausted RAM/zram and made it nearly unresponsive. Prefer development on a PC and use the Pi mainly for deployment and test; keep runtime dependencies lightweight.
 
@@ -35,10 +37,9 @@ This is the single list of unimplemented PiMusic features and improvements discu
 - Provide a phone-friendly captive-portal-style setup experience when the temporary `PiMusic-Setup` access point is active. Normal-network discovery is available through the device hostname's mDNS name (for example, `pimusic.local`).
 - Consider QR or NFC setup assistance only after the core provisioning flow is reliable; neither is a current installation requirement.
 
-### Add GPIO controls and indicators
+### Extend GPIO controls and indicators
 
-- Wire and implement the provisioning button on GPIO17 / physical pin 11. A roughly three-second hold should enter provisioning through the same shared state flow as the web and automatic-fallback paths; a short press should do nothing. Evaluate, but do not assume, a longer hold for forgetting saved Wi-Fi.
-- Wire and implement the READY LED on GPIO22 / physical pin 15 and SETUP LED on GPIO27 / physical pin 13, each with an approximately 330-ohm series resistor. Define safe startup/shutdown behavior, debouncing, and state indications: READY solid when operational; SETUP slow blink during the provisioning AP, fast blink during Wi-Fi connection, with optional brief success/degraded indications.
+- Evaluate a longer GPIO17 hold for forgetting saved Wi-Fi only after defining its recovery and confirmation behavior. The existing three-second hold exclusively requests provisioning.
 
 ### Make queue ownership backend-authoritative
 

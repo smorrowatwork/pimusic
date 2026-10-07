@@ -85,6 +85,7 @@ HOTSPOT_CONTROL = "/usr/local/bin/pimusic-hotspot-control"
 mpv_lock = RLock()
 playback_lock = RLock()
 navidrome_lock = RLock()
+bluetooth_scan_lock = RLock()
 PIMUSIC_VERSION = "1.0"
 # Background mobile tabs may suspend JavaScript timers while their audio is
 # legitimately still playing. Keep a bounded safety window rather than
@@ -436,6 +437,16 @@ def switch_bluetooth_output(address: str):
             text=True,
             timeout=10,
         )
+
+def bluetooth_failure_message(result, fallback):
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part).lower()
+    if "connection refused" in output:
+        return "The speaker refused the Bluetooth connection. Check that it is powered on and not connected to another device."
+    if "inprogress" in output or "in progress" in output:
+        return "Bluetooth is already scanning. Wait for the current scan to finish and try again."
+    if "not available" in output or "no default controller" in output:
+        return "Bluetooth is not available on the Pi."
+    return fallback
 
 def bluetooth_info(address: str):
     result = subprocess.run(
@@ -1120,26 +1131,31 @@ def browser_stream(song_id: str, request: Request):
 @app.post("/api/bluetooth/connect-device")
 def bluetooth_connect_device(request: BluetoothDeviceRequest):
     address = request.address
+    try:
+        info = bluetooth_info(address)
 
-    info = bluetooth_info(address)
-
-    if not info["connected"]:
-        result = subprocess.run(
-            ["bluetoothctl", "connect", address],
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-
-        if result.returncode != 0 or "Connection successful" not in result.stdout:
-            raise HTTPException(
-                status_code=500,
-                detail=result.stdout.strip()
-                or result.stderr.strip()
-                or "Bluetooth connection failed",
+        if not info["connected"]:
+            result = subprocess.run(
+                ["bluetoothctl", "connect", address],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
 
-    switch_bluetooth_output(address)
+            if result.returncode != 0 or "Connection successful" not in result.stdout:
+                raise HTTPException(
+                    status_code=503,
+                    detail=bluetooth_failure_message(result, "Unable to connect to the Bluetooth speaker."),
+                )
+
+        switch_bluetooth_output(address)
+    except subprocess.TimeoutExpired as error:
+        raise HTTPException(status_code=503, detail="Timed out while connecting to the Bluetooth speaker.") from error
+    except (OSError, RuntimeError) as error:
+        raise HTTPException(
+            status_code=503,
+            detail="The speaker connected but its audio output did not become available. Try again in a few seconds.",
+        ) from error
 
     save_result = subprocess.run(
         [
@@ -1971,22 +1987,41 @@ def bluetooth_devices():
 
 @app.post("/api/bluetooth/scan")
 def bluetooth_scan():
-    result = subprocess.run(
-        ["bluetoothctl", "--timeout", "10", "scan", "on"],
-        capture_output=True,
-        text=True,
-        timeout=15,
-    )
+    if not bluetooth_scan_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Bluetooth is already scanning. Wait for it to finish.")
+    try:
+        try:
+            result = subprocess.run(
+                ["bluetoothctl", "--timeout", "30", "scan", "on"],
+                capture_output=True,
+                text=True,
+                timeout=35,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise HTTPException(status_code=503, detail="Bluetooth scan timed out. Try again.") from error
+        finally:
+            # BlueZ should stop when bluetoothctl's timeout expires, but make a
+            # best-effort stop so a later UI scan cannot inherit discovery.
+            try:
+                subprocess.run(
+                    ["bluetoothctl", "scan", "off"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
 
-    if result.returncode != 0:
-        raise HTTPException(
-            status_code=500,
-            detail=result.stdout.strip()
-            or result.stderr.strip()
-            or "Bluetooth scan failed",
-        )
+        if result.returncode != 0:
+            detail = bluetooth_failure_message(
+                result,
+                "Bluetooth scan failed. Try restarting Bluetooth if the problem continues.",
+            )
+            raise HTTPException(status_code=409 if "already scanning" in detail.lower() else 503, detail=detail)
 
-    return list_bluetooth_devices()
+        return list_bluetooth_devices()
+    finally:
+        bluetooth_scan_lock.release()
 
 @app.post("/api/bluetooth/pair-device")
 def bluetooth_pair_device(request: BluetoothDeviceRequest):

@@ -1,0 +1,13 @@
+[Unit]
+Description=PiMusic GPIO provisioning controls and status LEDs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/lib/pimusic/pimusic-gpio
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

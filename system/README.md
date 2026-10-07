@@ -57,6 +57,12 @@ helper: `READY` when normal Wi-Fi is connected, `TRYING_WIFI` while fallback is
 looking for a saved network, `PROVISIONING` while the hotspot is active or being
 requested, and `CONNECTING_WIFI` during an explicit web connection attempt.
 
+When physical controls are wired, run `chmod +x system/install-gpio-controls.sh`
+then install it as the non-root PiMusic user after this fallback service. Its
+user service owns the GPIO17 provisioning button and the GPIO22/GPIO27 status
+LEDs. A three-second button hold invokes this same allow-listed helper's `start`
+action; it does not receive broader `sudo` access.
+
 To stop or remove the feature:
 
 ```bash

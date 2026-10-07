@@ -826,20 +826,25 @@ async function loadQueue() {
 
 async function scanBluetoothDevices() {
   const status = document.getElementById("bluetooth-scan-status");
+  const button = document.getElementById("bluetooth-scan-button");
+  if (button.disabled) return;
 
-  status.textContent = "Scanning...";
+  button.disabled = true;
+  status.textContent = "Scanning for speakers (up to 30 seconds)...";
 
   try {
     const data = await apiJson("/api/bluetooth/scan", { method: "POST" });
     renderBluetoothDevices(data.devices || []);
+    status.textContent = data.devices?.length
+      ? "Scan complete."
+      : "No speakers found. Keep the speaker close and in pairing mode, then try again.";
 
   } catch (error) {
     status.textContent = error.message || "Scan failed";
     showError(error);
-    return;
+  } finally {
+    button.disabled = false;
   }
-
-  status.textContent = "";
 }
 
 

@@ -21,12 +21,12 @@ See [README.md](../README.md) for installation, audio verification, Wi-Fi power-
 
 The development Pi may be configured for USB Ethernet gadget recovery on its micro-USB **data** port (the port closest to HDMI). This is a development-only convenience, not an installer requirement: it reserves that port for gadget mode and therefore excludes normal USB peripherals. On Windows, the Raspberry Pi USB Ethernet/RNDIS driver and Internet Connection Sharing can provide a temporary recovery network if ordinary Wi-Fi is unavailable. Preserve the device's normal SSH host-key verification when using that path, and do not add its private network or credentials to the repository.
 
-## Planned physical controls — not implemented
+## Physical controls and indicators
 
 | Function | GPIO / physical pin | Electrical assumption | Intended behavior |
 | --- | --- | --- | --- |
 | Provisioning button | GPIO17 / pin 11 | Momentary switch to GND; internal pull-up | Hold about 3 seconds to enter provisioning; short press does nothing. A longer reset/forget-network hold is only a possibility. |
-| READY LED | GPIO22 / pin 15 | About 330-ohm series resistor | Off while booting/unavailable; solid when operational; degraded blink is possible later. |
-| SETUP LED | GPIO27 / pin 13 | About 330-ohm series resistor | Off normally; slow blink during provisioning AP; fast blink during Wi-Fi connection; a brief success indication is possible. |
+| READY LED | GPIO22 / pin 15 | About 330-ohm series resistor | Solid when normal Wi-Fi is ready; slow blink while trying saved Wi-Fi; fast blink if provisioning state is unavailable. |
+| SETUP LED | GPIO27 / pin 13 | About 330-ohm series resistor | Off normally; slow blink during provisioning AP; fast blink during Wi-Fi connection. |
 
-No GPIO code, LED wiring configuration, or button-triggered provisioning is currently in the repository. Treat the table as a hardware/design plan, not deployment instructions; the implementation work is tracked in the [project backlog](development-history.md#backlog).
+Install `pimusic-gpio.service` after the fallback-hotspot helper; it runs as the PiMusic user and owns these pins. Do not run it at the same time as a manual GPIO test script. The remaining longer-hold reset/forget-network behavior remains backlog work.

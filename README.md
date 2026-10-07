@@ -18,7 +18,7 @@ In Raspberry Pi Imager, set a username and password, configure the Wi-Fi country
 sudo apt update
 sudo apt full-upgrade -y
 sudo apt install -y \
-  python3 python3-venv python3-pip \
+  python3 python3-venv python3-pip python3-gpiozero \
   mpv network-manager bluez \
   pipewire pipewire-alsa pipewire-pulse wireplumber libspa-0.2-bluetooth
 ```
@@ -119,6 +119,18 @@ systemctl --user status pimusic-mpv.service pimusic-web.service --no-pager
 ```
 
 Open `http://<pi-hostname-or-ip>:8000`. The **About / System Status** card shows the current Wi-Fi IP and MPV availability.
+
+### GPIO provisioning controls and indicators
+
+After installing the optional fallback hotspot service, install the GPIO user service as the PiMusic user (without `sudo`):
+
+```bash
+chmod +x system/install-gpio-controls.sh
+./system/install-gpio-controls.sh
+systemctl --user status pimusic-gpio.service --no-pager
+```
+
+The provisioning button connects GPIO17 / physical pin 11 to ground. Hold it for about three seconds to request the same setup hotspot used by the web UI; a short press does nothing. The READY LED on GPIO22 / pin 15 is solid when normal Wi-Fi is ready, while the SETUP LED on GPIO27 / pin 13 slowly blinks during the setup hotspot and quickly blinks while Wi-Fi is connecting. Each LED needs its own approximately 330-ohm series resistor. The service runs unprivileged and uses only the existing allow-listed hotspot helper.
 
 ### 4. Connect audio and use PiMusic
 
