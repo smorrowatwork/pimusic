@@ -324,6 +324,47 @@ async function refreshSystemStatus() {
   }
 }
 
+async function loadNavidromeConfig() {
+  const current = document.getElementById("navidrome-config-current");
+  const base = document.getElementById("navidrome-base");
+  try {
+    const data = await apiJson("/api/navidrome/config");
+    current.textContent = `Current server: ${data.base}`;
+    base.value = data.base || "";
+  } catch {
+    current.textContent = "Current music-server configuration is unavailable.";
+  }
+}
+
+async function saveNavidromeConfig(event) {
+  event.preventDefault();
+  const form = document.getElementById("navidrome-config-form");
+  const button = form.querySelector("button[type=submit]");
+  const status = document.getElementById("navidrome-config-status");
+  if (!window.confirm("Switching music servers stops playback and clears the current queue. Continue?")) return;
+  button.disabled = true;
+  status.textContent = "Validating music server…";
+  try {
+    await apiJson("/api/navidrome/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        base: document.getElementById("navidrome-base").value,
+        user: document.getElementById("navidrome-user").value,
+        password: document.getElementById("navidrome-password").value,
+      })
+    });
+    document.getElementById("navidrome-password").value = "";
+    status.textContent = "Music server changed. The queue was cleared.";
+    await Promise.all([refreshStatus(), loadQueue(), loadPlaylists(), refreshSystemStatus(), loadNavidromeConfig()]);
+  } catch (error) {
+    status.textContent = error.message || "Unable to configure music server.";
+    showError(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function loadSavedWifiNetworks() {
   const container = document.getElementById("wifi-saved-networks");
   try {
@@ -1203,6 +1244,7 @@ async function loadAlbum(albumId, artistId) {
     refreshWifiSetupStatus();
     setInterval(refreshWifiSetupStatus, 10000);
     refreshSystemStatus();
+    loadNavidromeConfig();
     loadSavedWifiNetworks();
 
     refreshRepeat();

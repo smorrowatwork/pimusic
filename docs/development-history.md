@@ -15,6 +15,7 @@ This is a concise record of verified project context, not a debugging transcript
 - The constrained hotspot helper now provides a lightweight shared provisioning status: `READY`, `TRYING_WIFI`, `PROVISIONING`, or `CONNECTING_WIFI`. It is derived from NetworkManager and a root-owned runtime marker, and is consumed by the web UI. This is a foundation for the later physical button, not a complete event-driven state machine.
 - Browser listening is an explicit, leased output mode. MPV remains paused while one browser renders the same queue through a PiMusic stream proxy; progress is mirrored into MPV for queue operations and handoff back to the Pi. Browser volume is local, and an expired five-minute browser lease pauses playback; the window accommodates background-tab timer throttling.
 - The optional Bluetooth reconnect installer saves a selected speaker through one root-owned MAC-validation helper and retries that trusted device at boot. The web service has no broader Bluetooth or root permission.
+- Navidrome server changes take a server address, username, and password from the local web UI; the Pi generates the salt and Subsonic token, validates them, and atomically saves only the derived credentials in the private PiMusic environment file. A successful change is applied only after the active queue has been cleared.
 - The development Pi has a retained USB Ethernet gadget recovery path. It is useful when normal Wi-Fi is unavailable, but it is a local development-machine configuration rather than a PiMusic installation feature.
 - Full VS Code Remote plus Codex workloads on the Pi have exhausted RAM/zram and made it nearly unresponsive. Prefer development on a PC and use the Pi mainly for deployment and test; keep runtime dependencies lightweight.
 
@@ -39,9 +40,9 @@ This is the single list of unimplemented PiMusic features and improvements discu
 - Wire and implement the provisioning button on GPIO17 / physical pin 11. A roughly three-second hold should enter provisioning through the same shared state flow as the web and automatic-fallback paths; a short press should do nothing. Evaluate, but do not assume, a longer hold for forgetting saved Wi-Fi.
 - Wire and implement the READY LED on GPIO22 / physical pin 15 and SETUP LED on GPIO27 / physical pin 13, each with an approximately 330-ohm series resistor. Define safe startup/shutdown behavior, debouncing, and state indications: READY solid when operational; SETUP slow blink during the provisioning AP, fast blink during Wi-Fi connection, with optional brief success/degraded indications.
 
-### Configure another Navidrome server
+### Make queue ownership backend-authoritative
 
-- Provide a deliberate way to configure or switch to another Navidrome/Subsonic server. The browser must never receive server credentials; the Pi should validate connectivity, store sensitive values in the private configuration location, and clearly handle effects on the active queue and playback state.
+- Replace the persistent MPV playlist as the queue execution source with a backend-owned, persisted queue model. MPV and browser playback should become renderers of that model, preserving the current one-renderer-at-a-time behavior while making output handoff and future library changes simpler.
 
 ### Make all card actions phone friendly
 

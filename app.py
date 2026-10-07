@@ -1,6 +1,7 @@
 import json
 import socket
 import httpx
+import hashlib
 import subprocess
 import time
 import os
@@ -28,6 +29,7 @@ NAVIDROME_TOKEN = os.environ["NAVIDROME_TOKEN"]
 app = FastAPI(title="PiMusic")
 
 PIMUSIC_STATE_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "pimusic"
+PIMUSIC_ENV_FILE = PIMUSIC_STATE_DIR / "pimusic.env"
 QUEUE_METADATA_FILE = PIMUSIC_STATE_DIR / "queue.json"
 SHUFFLE_STATE_FILE = QUEUE_METADATA_FILE.with_name("shuffle.json")
 PLAYBACK_STATE_FILE = QUEUE_METADATA_FILE.with_name("playback.json")
@@ -62,6 +64,11 @@ class WifiConnectRequest(BaseModel):
     ssid: str
     password: str | None = None
 
+class NavidromeConfigRequest(BaseModel):
+    base: str
+    user: str
+    password: str
+
 class BrowserProgressRequest(BaseModel):
     lease: str
     position: float = 0
@@ -77,6 +84,7 @@ MPV_SOCKET = "/tmp/pimusic-mpv.sock"
 HOTSPOT_CONTROL = "/usr/local/bin/pimusic-hotspot-control"
 mpv_lock = RLock()
 playback_lock = RLock()
+navidrome_lock = RLock()
 PIMUSIC_VERSION = "1.0"
 # Background mobile tabs may suspend JavaScript timers while their audio is
 # legitimately still playing. Keep a bounded safety window rather than
@@ -588,6 +596,87 @@ def navidrome_params():
     params["f"] = "json"
     return params
 
+def normalized_navidrome_base(value: str):
+    candidate = value.strip().rstrip("/")
+    parsed = urlparse(candidate)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise HTTPException(status_code=400, detail="Enter a complete http:// or https:// Navidrome server address")
+    return candidate
+
+def navidrome_config_params(user: str, salt: str, token: str):
+    return {
+        "v": "1.16.1",
+        "c": "pimusic",
+        "u": user,
+        "s": salt,
+        "t": token,
+        "f": "json",
+    }
+
+def navidrome_token(password: str, salt: str):
+    """Create the Subsonic token without retaining the Navidrome password."""
+    return hashlib.md5(f"{password}{salt}".encode("utf-8")).hexdigest()
+
+def validate_navidrome_config(base: str, user: str, salt: str, token: str):
+    try:
+        response = httpx.get(
+            f"{base}/rest/getPlaylists.view",
+            params=navidrome_config_params(user, salt, token),
+            timeout=15.0,
+        )
+        response.raise_for_status()
+        payload = response.json().get("subsonic-response", {})
+    except (httpx.HTTPError, ValueError) as error:
+        raise HTTPException(status_code=400, detail="Unable to reach or validate that Navidrome server") from error
+    if payload.get("status") != "ok":
+        raise HTTPException(status_code=400, detail="Navidrome rejected those credentials")
+
+def write_navidrome_config(base: str, user: str, salt: str, token: str):
+    def environment_line(name: str, value: str):
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+        return f'{name}="{escaped}"\n'
+
+    PIMUSIC_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(PIMUSIC_STATE_DIR, 0o700)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        delete=False,
+        dir=PIMUSIC_STATE_DIR,
+        prefix=".pimusic.env.",
+    ) as file:
+        file.write(environment_line("NAVIDROME_BASE", base))
+        file.write(environment_line("NAVIDROME_USER", user))
+        file.write(environment_line("NAVIDROME_SALT", salt))
+        file.write(environment_line("NAVIDROME_TOKEN", token))
+        temporary = Path(file.name)
+    try:
+        os.chmod(temporary, 0o600)
+        temporary.replace(PIMUSIC_ENV_FILE)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+def reset_playback_for_library_change():
+    global queue_metadata, shuffle_enabled, last_playback_state
+    with mpv_lock:
+        mpv_command(["set_property", "pause", True])
+        clear_mpv_playlist()
+    queue_metadata = {}
+    shuffle_enabled = False
+    last_playback_state = None
+    save_playback_state([])
+    browser_playback.update({"mode": "pi", "lease": None, "lease_expires": 0, "paused": True, "position": 0.0})
+    save_queue_metadata()
+    save_shuffle_state()
+    browser_state_changed()
+
 def navidrome_song(song_id: str):
     params = navidrome_params()
     params["id"] = song_id
@@ -931,6 +1020,35 @@ def get_cover_art(cover_art_id: str):
         content=response.content,
         media_type=response.headers.get("content-type", "image/jpeg"),
     )
+
+@app.get("/api/navidrome/config")
+def navidrome_config_status():
+    return {"base": NAVIDROME_BASE}
+
+@app.post("/api/navidrome/config")
+def set_navidrome_config(request: NavidromeConfigRequest):
+    global NAVIDROME_BASE, NAVIDROME_USER, NAVIDROME_SALT, NAVIDROME_TOKEN
+    base = normalized_navidrome_base(request.base)
+    values = [request.user.strip(), request.password]
+    if (
+        any(not value or len(value) > 512 or any(character in value for character in "\r\n") for value in values)
+        or any(character in base for character in "\r\n")
+    ):
+        raise HTTPException(status_code=400, detail="Enter valid Navidrome credentials")
+    user, password = values
+    salt = secrets.token_hex(16)
+    token = navidrome_token(password, salt)
+
+    with navidrome_lock:
+        validate_navidrome_config(base, user, salt, token)
+        reset_playback_for_library_change()
+        write_navidrome_config(base, user, salt, token)
+        NAVIDROME_BASE = base
+        NAVIDROME_USER = user
+        NAVIDROME_SALT = salt
+        NAVIDROME_TOKEN = token
+
+    return {"status": "configured", "base": NAVIDROME_BASE}
 
 @app.post("/api/output/browser")
 def use_browser_output():

@@ -140,6 +140,8 @@ The Bluetooth card saves the selected speaker's MAC address through the installe
 
 Click a song to replace the queue. Album and playlist pages offer **Play**, **Append to Queue**, and **Mix into Queue**. **Shuffle Upcoming** preserves the current track and randomizes only tracks that follow it. Choose **Listen in This Browser** to play the current queue through the controlling device; choose **Play on Pi** to hand it back to the Pi at the same track and position. Only the browser that starts browser listening can hand playback back. A browser may remain in the background while listening; if it stays disconnected for five minutes, playback pauses instead of unexpectedly starting the Pi speaker.
 
+To switch music libraries, expand **About / System Status**, enter the new Navidrome server address, username, and password under **Music Server**, then choose **Validate and Switch Server**. PiMusic generates the Subsonic salt and token on the Pi, validates the connection, and saves only those derived credentials. It then stops playback and clears the queue because its entries belong to the previous library. The password is not saved or returned to the browser.
+
 ### 5. Optional fallback hotspot
 
 Install the fallback service if the Pi should offer its own Wi-Fi network whenever normal Wi-Fi is unavailable:

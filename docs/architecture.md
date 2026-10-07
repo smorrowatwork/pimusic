@@ -21,6 +21,7 @@ Navidrome                         persistent MPV process
 ### Backend responsibilities
 
 - Reads `NAVIDROME_BASE`, `NAVIDROME_USER`, `NAVIDROME_SALT`, and `NAVIDROME_TOKEN` from its environment. The documented source is a private `~/.config/pimusic/pimusic.env` file.
+- Provides a local configuration endpoint that accepts a replacement Navidrome/Subsonic server address, username, and password. It generates a fresh salt and Subsonic token on the Pi, validates them, then atomically writes only the derived credentials to that same private file. It never returns stored credentials or saves the submitted password, and a successful switch pauses playback and clears the queue before applying the new connection.
 - Proxies Navidrome/Subsonic library, search, cover-art, and streaming requests so credentials are not exposed to the browser.
 - Controls one idle MPV process through its Unix-domain JSON IPC socket at `/tmp/pimusic-mpv.sock`, rather than launching a player per track.
 - Maintains queue metadata, recovery state, shuffle state, and volume JSON files under the service user's `~/.config/pimusic/` directory.

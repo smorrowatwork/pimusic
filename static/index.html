@@ -187,6 +187,16 @@
     <button id="systemToggleButton" onclick="toggleSection('system-card', 'systemToggleButton')" aria-expanded="false">Expand</button>
   </div>
   <div id="system-status">Loading system status?</div>
+  <form id="navidrome-config-form" onsubmit="saveNavidromeConfig(event)">
+    <h3>Music Server</h3>
+    <p id="navidrome-config-current"></p>
+    <input id="navidrome-base" type="url" autocomplete="url" placeholder="Navidrome server address" required>
+    <input id="navidrome-user" type="text" autocomplete="username" placeholder="Navidrome username" required>
+    <input id="navidrome-password" type="password" autocomplete="current-password" placeholder="Navidrome password" required>
+    <p>PiMusic generates and stores the salt and token; your password is used only to create them.</p>
+    <button type="submit">Validate and Switch Server</button>
+    <span id="navidrome-config-status"></span>
+  </form>
 </section>
 
 <div id="app-message" role="status" aria-live="polite" hidden></div>
