@@ -5,7 +5,7 @@ This is a concise record of verified project context, not a debugging transcript
 ## Established implementation and lessons
 
 - PiMusic's working core use case is Navidrome to MPV to a local, commonly Bluetooth, speaker.
-- A persistent idle MPV process and its IPC socket were chosen to keep controls responsive and preserve the live queue across web-backend restarts. Application state supplements MPV when MPV restarts empty.
+- A persistent idle MPV process and its IPC socket keep Pi-output controls responsive. The backend owns the persisted queue, including stable queue-entry IDs, order, current track, position, paused state, and shuffle state; MPV is rebuilt as its Pi-output renderer after queue changes or recovery.
 - Headless user services need `loginctl enable-linger`; MPV, PipeWire, and the backend need to share the intended user session.
 - Bluetooth pairing/connection is handled with `bluetoothctl`, while PipeWire output selection is handled with `wpctl`. The project deliberately does not depend on `pactl` for this.
 - The Pi Zero 2 W's shared Wi-Fi/Bluetooth radio and limited resources matter in deployment. Check power throttling and Wi-Fi power saving when Bluetooth is unreliable.
@@ -13,7 +13,7 @@ This is a concise record of verified project context, not a debugging transcript
 - When `pimusic-setup` is active, the fallback service must not repeatedly reactivate it or attempt a competing Wi-Fi activation: either action disconnects setup clients. The web connection flow pauses fallback during its explicit NetworkManager connection attempt, then resumes it once the attempt has completed.
 - The setup-hotspot flow has been tested end-to-end. Submitting normal Wi-Fi credentials necessarily removes the setup access point, so the browser must treat a post-submission network loss as expected and direct the user back to normal Wi-Fi. NetworkManager failures are summarized into safe authentication, authorization, availability, or timeout messages; raw command output is not sent to the browser.
 - The constrained hotspot helper now provides a lightweight shared provisioning status: `READY`, `TRYING_WIFI`, `PROVISIONING`, or `CONNECTING_WIFI`. It is derived from NetworkManager and a root-owned runtime marker, and is consumed by the web UI. This is a foundation for the later physical button, not a complete event-driven state machine.
-- Browser listening is an explicit, leased output mode. MPV remains paused while one browser renders the same queue through a PiMusic stream proxy; progress is mirrored into MPV for queue operations and handoff back to the Pi. Browser volume is local, and an expired five-minute browser lease pauses playback; the window accommodates background-tab timer throttling.
+- Browser listening is an explicit, leased output mode. MPV remains paused while one browser renders the backend-owned queue through a PiMusic stream proxy; the same persisted position and track are used for queue operations and handoff back to the Pi. Browser volume is local, and an expired five-minute browser lease pauses playback; the window accommodates background-tab timer throttling.
 - The optional Bluetooth reconnect installer saves a selected speaker through one root-owned MAC-validation helper and retries that trusted device at boot. The web service has no broader Bluetooth or root permission.
 - Navidrome server changes take a server address, username, and password from the local web UI; the Pi generates the salt and Subsonic token, validates them, and atomically saves only the derived credentials in the private PiMusic environment file. A successful change is applied only after the active queue has been cleared.
 - The optional `pimusic-gpio.service` runs as the PiMusic user and owns the provision button plus READY/SETUP LEDs. It consumes the same constrained provisioning-status helper as the web UI, and a three-second GPIO17 hold invokes only that helper's setup-start action.
@@ -41,14 +41,10 @@ This is the single list of unimplemented PiMusic features and improvements discu
 
 - Evaluate a longer GPIO17 hold for forgetting saved Wi-Fi only after defining its recovery and confirmation behavior. The existing three-second hold exclusively requests provisioning.
 
-### Make queue ownership backend-authoritative
-
-- Replace the persistent MPV playlist as the queue execution source with a backend-owned, persisted queue model. MPV and browser playback should become renderers of that model, preserving the current one-renderer-at-a-time behavior while making output handoff and future library changes simpler.
-
 ### Make all card actions phone friendly
 
 - Review every browser-card action for phone use. Apply the Wi-Fi card pattern where appropriate: comfortably sized tap targets, clear separation between adjacent actions, and single-column wrapping on narrow screens. Preserve useful compact layouts on larger screens and do not change action behavior as part of this visual pass.
 
 ## Important boundary
 
-The backlog is planned direction, not evidence of implementation. In particular, the current backend directly invokes `nmcli` for Wi-Fi operations, the repository's fallback service is a separate loop rather than the proposed shared state machine, and no GPIO code or hardware wiring configuration is present.
+The backlog is planned direction, not evidence of implementation. In particular, the current backend directly invokes `nmcli` for Wi-Fi operations, and the repository's fallback service is a separate loop rather than the proposed shared event-driven state machine. GPIO wiring and its optional user service are implemented; the remaining GPIO item is deliberately limited to evaluating a longer Wi-Fi-forget hold.

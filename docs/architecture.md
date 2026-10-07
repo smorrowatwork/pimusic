@@ -24,8 +24,8 @@ Navidrome                         persistent MPV process
 - Provides a local configuration endpoint that accepts a replacement Navidrome/Subsonic server address, username, and password. It generates a fresh salt and Subsonic token on the Pi, validates them, then atomically writes only the derived credentials to that same private file. It never returns stored credentials or saves the submitted password, and a successful switch pauses playback and clears the queue before applying the new connection.
 - Proxies Navidrome/Subsonic library, search, cover-art, and streaming requests so credentials are not exposed to the browser.
 - Controls one idle MPV process through its Unix-domain JSON IPC socket at `/tmp/pimusic-mpv.sock`, rather than launching a player per track.
-- Maintains queue metadata, recovery state, shuffle state, and volume JSON files under the service user's `~/.config/pimusic/` directory.
-- On FastAPI startup, restores saved queue and playback state only when MPV has an empty playlist, then restores saved volume.
+- Owns a durable queue record under the service user's `~/.config/pimusic/` directory: ordered queue entries with stable IDs, current index, position, paused state, and shuffle state. Volume is stored separately.
+- On FastAPI startup, restores that queue into MPV as the Pi renderer, then restores saved volume. Older metadata/playback files are migrated automatically.
 - Provides Wi-Fi status/scan/connect and saved-profile endpoints through `nmcli`; connection failures are mapped to credential-safe, actionable messages rather than raw command output. A successful connection response includes the active Wi-Fi address when it can reach the browser. Bluetooth scanning, pairing, trust, connection, and PipeWire sink selection use `bluetoothctl` and `wpctl`.
 
 ### Browser/UI responsibilities
@@ -44,11 +44,11 @@ Ports and sockets: the documented web listener is TCP 8000 on all interfaces; MP
 
 ## Planned, not current architecture
 
-The desired provisioning design is a NetworkManager-based state flow shared by automatic Wi-Fi failure, a GPIO button, and the web UI. The repository now has a lightweight shared status contract, but GPIO state handling, captive portal behavior, and a full event-driven provisioning state machine are not present today. Normal-network discovery uses the device hostname's mDNS name (for example, `pimusic.local`). The unimplemented work is tracked in the [project backlog](development-history.md#backlog).
+The desired provisioning design is a NetworkManager-based state flow shared by automatic Wi-Fi failure, a GPIO button, and the web UI. The repository now has a lightweight shared status contract and a GPIO provisioning button/indicators, but captive portal behavior and a full event-driven provisioning state machine are not present today. Normal-network discovery uses the device hostname's mDNS name (for example, `pimusic.local`). The unimplemented work is tracked in the [project backlog](development-history.md#backlog).
 
 ### Browser listening mode
 
-Browser listening is an explicit, exclusive output mode. The persistent MPV playlist remains the queue executor and recovery source, while the backend persists browser-output state and keeps the paused MPV playlist at the browser's current track and position. The browser therefore renders the same queue, rather than keeping an independent playlist.
+Browser listening is an explicit, exclusive output mode. The backend-owned persisted queue is the execution and recovery source; MPV and the selected browser are renderers of that same queue. While browser output is active MPV remains paused at the browser's current track and position.
 
 Only one renderer may play at a time. When the user switches from **Pi speaker** to **This browser**, PiMusic captures the canonical playback state, pauses MPV, and instructs the selected browser to begin the same song at the captured position if it was playing. The reverse switch pauses the browser first, then resumes MPV at that position. A failed handoff leaves both renderers paused and reports the failure; PiMusic must never silently create simultaneous audio.
 
@@ -56,4 +56,4 @@ The browser will request audio only from a PiMusic streaming endpoint. The backe
 
 The browser that selected **This browser** holds a five-minute playback lease renewed while the page is active and immediately when it returns to the foreground. The window accommodates mobile/browser timer throttling while a listening tab is in the background. Other open PiMusic pages remain controllers of the same queue but cannot start their own audio. If the lease expires because the listening page stays closed or disconnected, playback pauses rather than unexpectedly returning to a Pi speaker. After a Pi restart, the queue is recovered but browser mode is not: the appliance starts with its Pi renderer selected and paused until a user chooses an output.
 
-The backend owns the output route and bounded browser lease. A later internal refactor may make its queue representation independently authoritative, but the current design already preserves one queue and one active renderer without duplicating stream credentials or audio.
+The backend owns the output route, bounded browser lease, and queue representation, preserving one queue and one active renderer without duplicating stream credentials or audio.

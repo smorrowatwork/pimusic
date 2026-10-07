@@ -31,13 +31,20 @@ app = FastAPI(title="PiMusic")
 PIMUSIC_STATE_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "pimusic"
 PIMUSIC_ENV_FILE = PIMUSIC_STATE_DIR / "pimusic.env"
 QUEUE_METADATA_FILE = PIMUSIC_STATE_DIR / "queue.json"
-SHUFFLE_STATE_FILE = QUEUE_METADATA_FILE.with_name("shuffle.json")
 PLAYBACK_STATE_FILE = QUEUE_METADATA_FILE.with_name("playback.json")
 VOLUME_STATE_FILE = QUEUE_METADATA_FILE.with_name("volume.json")
 OUTPUT_STATE_FILE = QUEUE_METADATA_FILE.with_name("browser-playback.json")
-queue_metadata = {}
-shuffle_enabled = False
-last_playback_state = None
+queue_metadata = {}  # Legacy metadata, used only while migrating older installs.
+queue_state = {
+    "version": 2,
+    "items": [],
+    "current_index": -1,
+    "paused": True,
+    "position": 0.0,
+    "shuffle": False,
+}
+queue_state_from_v2 = False
+last_persisted_queue_progress = None
 browser_playback = {
     "mode": "pi",
     "lease": None,
@@ -55,7 +62,7 @@ class SeekRequest(BaseModel):
 
 class QueueMoveRequest(BaseModel):
     target_position: int
-    queue_ids: list[int]
+    queue_ids: list[str]
 
 class BluetoothDeviceRequest(BaseModel):
     address: str
@@ -84,6 +91,7 @@ MPV_SOCKET = "/tmp/pimusic-mpv.sock"
 HOTSPOT_CONTROL = "/usr/local/bin/pimusic-hotspot-control"
 mpv_lock = RLock()
 playback_lock = RLock()
+queue_lock = RLock()
 navidrome_lock = RLock()
 bluetooth_scan_lock = RLock()
 PIMUSIC_VERSION = "1.0"
@@ -502,83 +510,6 @@ def bluetooth_info(address: str):
 
     return info
 
-def mpv_socket_identity():
-    stat = Path(MPV_SOCKET).stat()
-    return [stat.st_ino, stat.st_ctime_ns]
-
-def save_shuffle_state():
-    state = {"enabled": shuffle_enabled}
-    if shuffle_enabled:
-        playlist = mpv_property("playlist")
-        if playlist is None:
-            raise HTTPException(status_code=500, detail="Unable to save shuffle state")
-        state.update(socket=mpv_socket_identity(), ids=[item["id"] for item in playlist])
-    SHUFFLE_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    temporary = SHUFFLE_STATE_FILE.with_suffix(".tmp")
-    temporary.write_text(json.dumps(state), encoding="utf-8")
-    temporary.replace(SHUFFLE_STATE_FILE)
-
-def load_shuffle_state():
-    global shuffle_enabled
-    shuffle_enabled = False
-    try:
-        state = json.loads(SHUFFLE_STATE_FILE.read_text(encoding="utf-8"))
-        if state.get("enabled") is not True or state.get("socket") != mpv_socket_identity():
-            return
-        playlist = mpv_property("playlist")
-        if playlist is None:
-            raise HTTPException(status_code=500, detail="Unable to read shuffle state")
-        # Removals and manual reordering can preserve a shuffled queue.
-        shuffle_enabled = bool(playlist) and {item["id"] for item in playlist}.issubset(set(state["ids"]))
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        shuffle_enabled = False
-
-def save_queue_metadata():
-    QUEUE_METADATA_FILE.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    with QUEUE_METADATA_FILE.open("w") as f:
-        json.dump(queue_metadata, f)
-
-
-def load_queue_metadata():
-    global queue_metadata
-
-    if not QUEUE_METADATA_FILE.exists():
-        queue_metadata = {}
-        return
-
-    try:
-        with QUEUE_METADATA_FILE.open("r") as f:
-            queue_metadata = json.load(f)
-    except Exception:
-        queue_metadata = {}
-
-def save_playback_state(playlist):
-    global last_playback_state
-    song_ids = []
-    for item in playlist:
-        try:
-            song_id = parse_qs(urlparse(item.get("filename", "")).query).get("id", [None])[0]
-            if song_id:
-                song_ids.append(song_id)
-        except Exception:
-            continue
-    state = {
-        "song_ids": song_ids,
-        "position": mpv_property("playlist-pos"),
-        "paused": mpv_property("pause") is True,
-    }
-    if state == last_playback_state:
-        return
-    PLAYBACK_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    temporary = PLAYBACK_STATE_FILE.with_suffix(".tmp")
-    temporary.write_text(json.dumps(state), encoding="utf-8")
-    temporary.replace(PLAYBACK_STATE_FILE)
-    last_playback_state = state
-
 def save_volume_state(volume):
     VOLUME_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     temporary = VOLUME_STATE_FILE.with_suffix(".tmp")
@@ -675,17 +606,15 @@ def write_navidrome_config(base: str, user: str, salt: str, token: str):
         temporary.unlink(missing_ok=True)
 
 def reset_playback_for_library_change():
-    global queue_metadata, shuffle_enabled, last_playback_state
+    global queue_metadata
     with mpv_lock:
         mpv_command(["set_property", "pause", True])
         clear_mpv_playlist()
     queue_metadata = {}
-    shuffle_enabled = False
-    last_playback_state = None
-    save_playback_state([])
+    with queue_lock:
+        queue_state.update({"items": [], "current_index": -1, "paused": True, "position": 0.0, "shuffle": False})
     browser_playback.update({"mode": "pi", "lease": None, "lease_expires": 0, "paused": True, "position": 0.0})
-    save_queue_metadata()
-    save_shuffle_state()
+    save_queue_state()
     browser_state_changed()
 
 def navidrome_song(song_id: str):
@@ -776,10 +705,12 @@ def save_browser_playback():
 
 def load_browser_playback():
     """A browser cannot survive a backend restart, so always return to paused Pi mode."""
+    was_browser = False
     try:
         state = json.loads(OUTPUT_STATE_FILE.read_text(encoding="utf-8"))
         browser_playback["position"] = max(0, float(state.get("position", 0)))
         browser_playback["revision"] = int(state.get("revision", 0))
+        was_browser = state.get("mode") == "browser"
     except (OSError, ValueError, TypeError):
         pass
     browser_playback.update({
@@ -788,12 +719,19 @@ def load_browser_playback():
         "lease_expires": 0,
         "paused": True,
     })
+    if was_browser:
+        with queue_lock:
+            queue_state.update({"position": browser_playback["position"], "paused": True})
+        save_queue_state()
 
 def browser_lease_active(lease=None):
     if browser_playback["mode"] != "browser":
         return False
     if time.monotonic() >= browser_playback["lease_expires"]:
         browser_playback.update({"mode": "pi", "lease": None, "lease_expires": 0, "paused": True})
+        with queue_lock:
+            queue_state["paused"] = True
+        save_queue_state()
         mpv_command(["set_property", "pause", True])
         save_browser_playback()
         return False
@@ -847,24 +785,6 @@ def browser_stream_response(song_id: str, request: Request):
         background=BackgroundTask(lambda: (upstream.close(), client.close())),
     )
 
-def cache_queue_song_metadata(song):
-    song_id = song["id"]
-    cover_art = song.get("coverArt")
-
-    if not cover_art:
-        try:
-            cover_art = navidrome_song(song_id).get("coverArt")
-        except Exception:
-            cover_art = None
-
-    queue_metadata[song_id] = {
-        "title": song.get("title"),
-        "artist": song.get("artist"),
-        "album": song.get("album"),
-        "coverArt": cover_art,
-        "duration": song.get("duration"),
-    }
-
 def clear_mpv_playlist():
     playlist = mpv_property("playlist")
 
@@ -883,130 +803,235 @@ def clear_mpv_playlist():
                 detail="Unable to clear the existing queue",
             )
 
-def play_song_queue(songs):
-
-    global queue_metadata
-    global shuffle_enabled
-
-    queue_metadata = {}
-    for song in songs:
-        cache_queue_song_metadata(song)
-
-    save_queue_metadata()
-
-    song_ids = [song["id"] for song in songs]
-
-    if not song_ids:
-        raise HTTPException(
-            status_code=400,
-            detail="Queue contains no songs",
-        )
-
-    with mpv_lock:
-        clear_mpv_playlist()
-
-        first_url = navidrome_stream_url(song_ids[0])
-
-        result = mpv_command([
-            "loadfile",
-            first_url,
-            "replace",
-        ])
-
-        if result.get("error") != "success":
-            raise HTTPException(
-                status_code=500,
-                detail=result,
-            )
-
-        shuffle_enabled = False
-        save_shuffle_state()
-
-        for song_id in song_ids[1:]:
-            stream_url = navidrome_stream_url(song_id)
-
-            result = mpv_command([
-                "loadfile",
-                stream_url,
-                "append",
-            ])
-
-            if result.get("error") != "success":
-                raise HTTPException(
-                    status_code=500,
-                    detail=result,
-                )
-
-        if browser_lease_active():
-            pause_mpv_for_browser()
-            browser_playback.update({"position": 0.0, "paused": False})
-            browser_state_changed()
-        else:
-            mpv_command(["set_property", "pause", False])
-
+def queue_item_from_song(song):
+    """Make a durable queue entry. Queue IDs identify an occurrence, not a song."""
+    song_id = str(song["id"])
+    cover_art = song.get("coverArt")
+    if not cover_art:
+        try:
+            cover_art = navidrome_song(song_id).get("coverArt")
+        except Exception:
+            cover_art = None
     return {
-        "status": "playing",
-        "queue_length": len(song_ids),
+        "queue_id": secrets.token_urlsafe(12),
+        "song_id": song_id,
+        "title": song.get("title"),
+        "artist": song.get("artist"),
+        "album": song.get("album"),
+        "coverArt": cover_art,
+        "duration": song.get("duration") or 0,
     }
 
-def add_songs_to_queue(songs, mix=False):
-    global shuffle_enabled
 
+def save_queue_state():
+    """Atomically persist the queue; it is the playback authority, not MPV."""
+    global last_persisted_queue_progress
+    with queue_lock:
+        state = {
+            "version": 2,
+            "items": queue_state["items"],
+            "current_index": queue_state["current_index"],
+            "paused": queue_state["paused"],
+            "position": queue_state["position"],
+            "shuffle": queue_state["shuffle"],
+        }
+    QUEUE_METADATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+    temporary = QUEUE_METADATA_FILE.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state), encoding="utf-8")
+    temporary.replace(QUEUE_METADATA_FILE)
+    last_persisted_queue_progress = (
+        state["current_index"], state["paused"], state["position"],
+    )
+
+
+def load_queue_state():
+    """Load v2 state, or migrate the old metadata/playback pair once."""
+    global queue_metadata, queue_state, queue_state_from_v2
+    queue_metadata = {}
+    try:
+        saved = json.loads(QUEUE_METADATA_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        saved = {}
+
+    if isinstance(saved, dict) and saved.get("version") == 2 and isinstance(saved.get("items"), list):
+        queue_state_from_v2 = True
+        items = [item for item in saved["items"] if isinstance(item, dict) and item.get("queue_id") and item.get("song_id")]
+        current = saved.get("current_index", -1)
+        queue_state = {
+            "version": 2,
+            "items": items,
+            "current_index": current if isinstance(current, int) and 0 <= current < len(items) else (-1 if not items else 0),
+            "paused": bool(saved.get("paused", True)),
+            "position": max(0, float(saved.get("position", 0) or 0)),
+            "shuffle": bool(saved.get("shuffle", False)),
+        }
+        return
+
+    # Previous queue.json was song-ID metadata; playback.json supplied the order.
+    queue_state_from_v2 = False
+    queue_metadata = saved if isinstance(saved, dict) else {}
+    try:
+        legacy_playback = json.loads(PLAYBACK_STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        legacy_playback = {}
+    items = []
+    for song_id in legacy_playback.get("song_ids", []):
+        metadata = queue_metadata.get(str(song_id), {})
+        items.append({
+            "queue_id": secrets.token_urlsafe(12), "song_id": str(song_id),
+            "title": metadata.get("title"), "artist": metadata.get("artist"),
+            "album": metadata.get("album"), "coverArt": metadata.get("coverArt"),
+            "duration": metadata.get("duration") or 0,
+        })
+    current = legacy_playback.get("position", -1)
+    queue_state = {
+        "version": 2, "items": items,
+        "current_index": current if isinstance(current, int) and 0 <= current < len(items) else (-1 if not items else 0),
+        "paused": bool(legacy_playback.get("paused", True)), "position": 0.0, "shuffle": False,
+    }
+    if items:
+        save_queue_state()
+
+
+def queue_snapshot():
+    with queue_lock:
+        return {
+            "items": [dict(item) for item in queue_state["items"]],
+            "current_index": queue_state["current_index"],
+            "paused": queue_state["paused"], "position": queue_state["position"],
+            "shuffle": queue_state["shuffle"],
+        }
+
+
+def render_queue_to_mpv():
+    """Make MPV render the authoritative queue, preserving its playback state."""
+    state = queue_snapshot()
+    with mpv_lock:
+        # Do not let a replacement playlist briefly play from its beginning
+        # while its stream is still loading and before its saved seek applies.
+        mpv_command(["set_property", "pause", True])
+        clear_mpv_playlist()
+        for index, item in enumerate(state["items"]):
+            result = mpv_command(["loadfile", navidrome_stream_url(item["song_id"]), "replace" if index == 0 else "append"])
+            if result.get("error") != "success":
+                raise HTTPException(status_code=500, detail="Unable to render the queue on the Pi")
+        if state["current_index"] >= 0:
+            mpv_command(["set_property", "playlist-pos", state["current_index"]])
+            target_position = state["position"]
+            if target_position > 0:
+                # Network streams load asynchronously. A successful IPC reply
+                # alone does not mean MPV has a seekable demuxer yet.
+                for _ in range(30):
+                    result = mpv_command(["set_property", "time-pos", target_position])
+                    if result.get("error") == "success":
+                        actual_position = mpv_property("time-pos")
+                        if isinstance(actual_position, (int, float)) and abs(actual_position - target_position) < 1:
+                            break
+                    time.sleep(0.1)
+        # Browser output always leaves the Pi renderer silent.
+        mpv_command(["set_property", "pause", True if browser_playback["mode"] == "browser" else state["paused"]])
+
+
+def sync_queue_from_mpv():
+    """Record Pi-renderer progress without ever taking queue order from MPV."""
+    if browser_playback["mode"] == "browser":
+        return
+    state = queue_snapshot()
+    if not state["items"]:
+        return
+    index = mpv_property("playlist-pos")
+    if not isinstance(index, int) or not 0 <= index < len(state["items"]):
+        return
+    position = max(0, float(mpv_property("time-pos") or 0))
+    paused = mpv_property("pause") is True or mpv_property("idle-active") is True
+    with queue_lock:
+        persisted = last_persisted_queue_progress
+        should_persist = (
+            persisted is None or persisted[0] != index or persisted[1] != paused
+            or abs(persisted[2] - position) >= 5
+        )
+        queue_state.update({"current_index": index, "position": position, "paused": paused})
+    if should_persist:
+        save_queue_state()
+
+
+def set_queue_from_songs(songs):
+    if not songs:
+        raise HTTPException(status_code=400, detail="Queue contains no songs")
+    browser_active = browser_lease_active()
+    with queue_lock:
+        queue_state.update({
+            "items": [queue_item_from_song(song) for song in songs], "current_index": 0,
+            "paused": False, "position": 0.0, "shuffle": False,
+        })
+    save_queue_state()
+    render_queue_to_mpv()
+    if browser_active:
+        browser_playback.update({"position": 0.0, "paused": False})
+        browser_state_changed()
+    return {"status": "playing", "queue_length": len(songs)}
+
+
+def play_song_queue(songs):
+    return set_queue_from_songs(songs)
+
+
+def add_songs_to_queue(songs, mix=False):
     if not songs:
         raise HTTPException(status_code=400, detail="Collection contains no songs")
+    state = queue_snapshot()
+    if not state["items"] or state["current_index"] < 0:
+        return set_queue_from_songs(songs)
+    additions = [queue_item_from_song(song) for song in songs]
+    with queue_lock:
+        if mix:
+            for item in additions:
+                target = random.randint(queue_state["current_index"] + 1, len(queue_state["items"]))
+                queue_state["items"].insert(target, item)
+        else:
+            queue_state["items"].extend(additions)
+        queue_state["shuffle"] = False
+    save_queue_state()
+    render_queue_to_mpv()
+    return {"status": "mixed" if mix else "appended", "queue_length": len(additions)}
 
-    with mpv_lock:
-        playlist = mpv_property("playlist") or []
-        current_position = mpv_property("playlist-pos")
-        track_is_paused = mpv_property("pause") is True
-        track_is_playing = mpv_property("core-idle") is False
 
-        if current_position is None or current_position < 0 or not (track_is_paused or track_is_playing):
-            return play_song_queue(songs)
-
-        for song in songs:
-            cache_queue_song_metadata(song)
-            result = mpv_command(["loadfile", navidrome_stream_url(song["id"]), "append"])
-            if result.get("error") != "success":
-                raise HTTPException(status_code=500, detail="Unable to add song to the queue")
-
-            if mix:
-                playlist = mpv_property("playlist") or []
-                source_position = len(playlist) - 1
-                target_position = random.randint(current_position + 1, source_position)
-                if source_position != target_position:
-                    result = mpv_command(["playlist-move", source_position, target_position])
-                    if result.get("error") != "success":
-                        raise HTTPException(status_code=500, detail="Unable to mix song into the queue")
-
-        shuffle_enabled = False
-        save_shuffle_state()
-        save_queue_metadata()
-
-    return {"status": "mixed" if mix else "appended", "queue_length": len(songs)}
-
-# Runs at startup #
-# Load the queue from persistent storage
-load_queue_metadata()
+# Runs at import so endpoint handlers always have a queue model available.
+load_queue_state()
 
 @app.on_event("startup")
 def restore_playback_queue():
     load_browser_playback()
     restore_volume_state()
     try:
-        if mpv_property("playlist"):
+        if queue_snapshot()["items"]:
+            render_queue_to_mpv()
             return
-        state = json.loads(PLAYBACK_STATE_FILE.read_text(encoding="utf-8"))
-        song_ids = state.get("song_ids", [])
-        if not song_ids:
+        # An upgrade can find a still-running legacy MPV queue before the old
+        # recovery file was written. Import it once, then persist v2 state.
+        # Never import a stale MPV playlist over an intentional empty v2 queue.
+        if queue_state_from_v2:
             return
-        songs = [navidrome_song(song_id) for song_id in song_ids]
-        play_song_queue(songs)
-        position = state.get("position", 0)
-        if isinstance(position, int) and 0 <= position < len(songs):
-            mpv_command(["set_property", "playlist-pos", position])
-        if state.get("paused"):
-            mpv_command(["set_property", "pause", True])
+        playlist = mpv_property("playlist") or []
+        if playlist:
+            current_index = mpv_property("playlist-pos")
+            current_index = current_index if isinstance(current_index, int) else 0
+            position = max(0, float(mpv_property("time-pos") or 0))
+            paused = mpv_property("pause") is True or mpv_property("idle-active") is True
+            songs = []
+            for entry in playlist:
+                song_id = parse_qs(urlparse(entry.get("filename", "")).query).get("id", [None])[0]
+                if song_id:
+                    songs.append(navidrome_song(song_id))
+            if songs:
+                with queue_lock:
+                    queue_state.update({
+                        "items": [queue_item_from_song(song) for song in songs],
+                        "current_index": min(max(0, current_index), len(songs) - 1),
+                        "position": position, "paused": paused, "shuffle": False,
+                    })
+                save_queue_state()
+                render_queue_to_mpv()
     except Exception:
         pass
 
@@ -1063,11 +1088,12 @@ def set_navidrome_config(request: NavidromeConfigRequest):
 
 @app.post("/api/output/browser")
 def use_browser_output():
-    playlist = mpv_property("playlist") or []
-    if not playlist:
+    sync_queue_from_mpv()
+    state = queue_snapshot()
+    if not state["items"]:
         raise HTTPException(status_code=400, detail="Choose music before listening in this browser")
-    position = max(0, float(mpv_property("time-pos") or 0))
-    paused = mpv_property("pause") is True or mpv_property("idle-active") is True
+    position = state["position"]
+    paused = state["paused"]
     lease = secrets.token_urlsafe(32)
     browser_playback.update({
         "mode": "browser",
@@ -1087,12 +1113,10 @@ def use_pi_output(request: BrowserLeaseRequest):
     position = max(0, browser_playback["position"])
     paused = browser_playback["paused"]
     browser_playback.update({"mode": "pi", "lease": None, "lease_expires": 0})
-    result = mpv_command(["set_property", "time-pos", position])
-    if result.get("error") != "success":
-        raise HTTPException(status_code=503, detail="Unable to resume Pi audio")
-    result = mpv_command(["set_property", "pause", paused])
-    if result.get("error") != "success":
-        raise HTTPException(status_code=503, detail="Unable to resume Pi audio")
+    with queue_lock:
+        queue_state.update({"position": position, "paused": paused})
+    save_queue_state()
+    render_queue_to_mpv()
     browser_state_changed()
     return {"mode": "pi", "position": position, "paused": paused}
 
@@ -1105,8 +1129,16 @@ def browser_progress(request: BrowserProgressRequest):
         "position": max(0, request.position),
         "paused": request.paused,
     })
-    # Keep MPV's dormant playlist at the browser position so queue changes and
-    # a later handoff use the same canonical track and time.
+    with queue_lock:
+        persisted = last_persisted_queue_progress
+        should_persist = (
+            persisted is None or persisted[1] != request.paused
+            or abs(persisted[2] - browser_playback["position"]) >= 5
+        )
+        queue_state.update({"position": browser_playback["position"], "paused": request.paused})
+    if should_persist:
+        save_queue_state()
+    # Keep the dormant renderer at the same point for a fast handoff.
     mpv_command(["set_property", "time-pos", browser_playback["position"]])
     pause_mpv_for_browser()
     save_browser_playback()
@@ -1116,10 +1148,31 @@ def browser_progress(request: BrowserProgressRequest):
 def browser_ended(request: BrowserEndedRequest):
     if not browser_lease_active(request.lease):
         raise HTTPException(status_code=409, detail="Browser playback session expired")
-    result = mpv_command(["playlist-next", "force"])
-    if result.get("error") != "success":
-        raise HTTPException(status_code=503, detail="Unable to advance the queue")
-    pause_mpv_for_browser()
+    state = queue_snapshot()
+    if state["current_index"] < 0:
+        with queue_lock:
+            queue_state.update({"paused": True, "position": 0.0})
+        browser_playback.update({"position": 0.0, "paused": True})
+        save_queue_state()
+        browser_state_changed()
+        return {"status": "ended", "revision": browser_playback["revision"]}
+    if mpv_property("loop-file") == "inf":
+        next_index = state["current_index"]
+    elif state["current_index"] + 1 < len(state["items"]):
+        next_index = state["current_index"] + 1
+    elif mpv_property("loop-playlist") == "inf":
+        next_index = 0
+    else:
+        with queue_lock:
+            queue_state.update({"paused": True, "position": 0.0})
+        browser_playback.update({"position": 0.0, "paused": True})
+        save_queue_state()
+        browser_state_changed()
+        return {"status": "ended", "revision": browser_playback["revision"]}
+    with queue_lock:
+        queue_state.update({"current_index": next_index, "position": 0.0, "paused": False})
+    save_queue_state()
+    render_queue_to_mpv()
     browser_playback.update({"position": 0.0, "paused": False})
     browser_state_changed()
     return {"status": "advanced", "revision": browser_playback["revision"]}
@@ -1222,78 +1275,37 @@ def add_collection_to_queue(mode: str, collection: str, collection_id: str):
 
 @app.get("/api/player/queue")
 def get_queue():
-    result = mpv_command(["get_property", "playlist"])
-
-    if result.get("error") != "success":
-        raise HTTPException(
-            status_code=500,
-            detail=result,
-        )
-
-    playlist = result.get("data") or []
-    queue = []
-
-    for index, item in enumerate(playlist):
-        filename = item.get("filename", "")
-        song_id = None
-
-        try:
-            query = parse_qs(urlparse(filename).query)
-            song_id = query.get("id", [None])[0]
-        except Exception:
-            pass
-
-        metadata = queue_metadata.get(song_id, {})
-
-        queue.append({
-            "position": index,
-            "song_id": song_id,
-            "title": metadata.get("title") or item.get("title"),
-            "artist": metadata.get("artist"),
-            "album": metadata.get("album"),
-            "current": item.get("current", False),
-            "playing": item.get("playing", False),
-            "mpv_id": item.get("id"),
-        })
-
-    return {
-        "queue": queue
-    }
+    sync_queue_from_mpv()
+    state = queue_snapshot()
+    return {"queue": [
+        {**item, "position": index, "current": index == state["current_index"],
+         "playing": index == state["current_index"] and not state["paused"]}
+        for index, item in enumerate(state["items"])
+    ]}
 
 @app.post("/api/player/queue/{position}/play")
 def play_queue_position(position: int):
-    playlist = mpv_property("playlist")
-
-    if not playlist:
+    browser_active = browser_lease_active()
+    state = queue_snapshot()
+    if not state["items"]:
         raise HTTPException(
             status_code=400,
             detail="Queue is empty",
         )
 
-    if position < 0 or position >= len(playlist):
+    if position < 0 or position >= len(state["items"]):
         raise HTTPException(
             status_code=400,
             detail="Invalid queue position",
         )
 
-    result = mpv_command([
-        "set_property",
-        "playlist-pos",
-        position,
-    ])
-
-    if result.get("error") != "success":
-        raise HTTPException(
-            status_code=500,
-            detail=result,
-        )
-
-    if browser_lease_active():
-        pause_mpv_for_browser()
+    with queue_lock:
+        queue_state.update({"current_index": position, "position": 0.0, "paused": False})
+    save_queue_state()
+    if browser_active:
         browser_playback.update({"position": 0.0, "paused": False})
         browser_state_changed()
-    else:
-        mpv_command(["set_property", "pause", False])
+    render_queue_to_mpv()
 
     return {
         "status": "playing",
@@ -1302,54 +1314,55 @@ def play_queue_position(position: int):
 
 @app.post("/api/player/queue/{position}/move")
 def move_queue_position(position: int, request: QueueMoveRequest):
-    playlist = mpv_property("playlist")
-    if playlist is None:
-        raise HTTPException(status_code=500, detail="Unable to read queue")
-
+    state = queue_snapshot()
     target = request.target_position
-    if not (0 <= position < len(playlist) and 0 <= target < len(playlist)):
+    if not (0 <= position < len(state["items"]) and 0 <= target < len(state["items"])):
         raise HTTPException(status_code=400, detail="Invalid queue position")
-    if [item.get("id") for item in playlist] != request.queue_ids:
+    if [item["queue_id"] for item in state["items"]] != request.queue_ids:
         raise HTTPException(status_code=409, detail="Queue changed. Please try again.")
 
     if position != target:
-        # MPV inserts before the target entry in the original playlist.
-        insertion = target + 1 if position < target else target
-        result = mpv_command(["playlist-move", position, insertion])
-        if result.get("error") != "success":
-            raise HTTPException(status_code=500, detail="Unable to move queue item")
+        current_id = state["items"][state["current_index"]]["queue_id"] if state["current_index"] >= 0 else None
+        with queue_lock:
+            item = queue_state["items"].pop(position)
+            queue_state["items"].insert(target, item)
+            queue_state["current_index"] = next((i for i, candidate in enumerate(queue_state["items"])
+                                                  if candidate["queue_id"] == current_id), -1)
+        save_queue_state()
+        render_queue_to_mpv()
     return {"status": "moved", "position": target}
 
 @app.delete("/api/player/queue")
 def clear_queue():
-    global queue_metadata, shuffle_enabled
-
-    with mpv_lock:
-        clear_mpv_playlist()
-
-    queue_metadata = {}
-    shuffle_enabled = False
-    save_shuffle_state()
-    save_queue_metadata()
+    with queue_lock:
+        queue_state.update({"items": [], "current_index": -1, "paused": True, "position": 0.0, "shuffle": False})
+    save_queue_state()
+    render_queue_to_mpv()
     return {"status": "cleared"}
 
 @app.delete("/api/player/queue/{position}")
-def remove_queue_position(position: int, mpv_id: int):
-    playlist = mpv_property("playlist")
-
-    if playlist is None:
-        raise HTTPException(status_code=500, detail="Unable to read queue")
-
-    if position < 0 or position >= len(playlist):
+def remove_queue_position(position: int, queue_id: str):
+    state = queue_snapshot()
+    if position < 0 or position >= len(state["items"]):
         raise HTTPException(status_code=400, detail="Invalid queue position")
-
-    if playlist[position].get("id") != mpv_id:
+    if state["items"][position]["queue_id"] != queue_id:
         raise HTTPException(status_code=409, detail="Queue changed. Please try again.")
-
-    result = mpv_command(["playlist-remove", position])
-
-    if result.get("error") != "success":
-        raise HTTPException(status_code=500, detail="Unable to remove queue item")
+    was_current = position == state["current_index"]
+    current_id = state["items"][state["current_index"]]["queue_id"] if state["current_index"] >= 0 else None
+    with queue_lock:
+        queue_state["items"].pop(position)
+        if not queue_state["items"]:
+            queue_state.update({"current_index": -1, "paused": True, "position": 0.0})
+        elif was_current:
+            queue_state.update({"current_index": min(position, len(queue_state["items"]) - 1), "position": 0.0})
+        else:
+            queue_state["current_index"] = next((i for i, item in enumerate(queue_state["items"])
+                                                  if item["queue_id"] == current_id), -1)
+    save_queue_state()
+    render_queue_to_mpv()
+    if browser_lease_active() and was_current:
+        browser_playback["position"] = 0.0
+        browser_state_changed()
 
     return {"status": "removed", "position": position}
 
@@ -1573,67 +1586,69 @@ def get_artists():
 
 @app.post("/api/player/next")
 def next_track():
-    result = mpv_command(["playlist-next", "force"])
-
-    if result.get("error") != "success":
-        raise HTTPException(status_code=500, detail=result)
-
-    if browser_lease_active():
-        pause_mpv_for_browser()
+    browser_active = browser_lease_active()
+    state = queue_snapshot()
+    if state["current_index"] < 0:
+        raise HTTPException(status_code=400, detail="No next track")
+    if mpv_property("loop-file") == "inf":
+        target = state["current_index"]
+    elif state["current_index"] + 1 < len(state["items"]):
+        target = state["current_index"] + 1
+    elif mpv_property("loop-playlist") == "inf":
+        target = 0
+    else:
+        raise HTTPException(status_code=400, detail="No next track")
+    with queue_lock:
+        queue_state.update({"current_index": target, "position": 0.0})
+    save_queue_state()
+    if browser_active:
         browser_playback.update({"position": 0.0, "paused": False})
         browser_state_changed()
+    render_queue_to_mpv()
     return {"status": "ok"}
 
 
 @app.post("/api/player/previous")
 def previous_track():
-    result = mpv_command(["playlist-prev", "force"])
-
-    if result.get("error") != "success":
-        raise HTTPException(status_code=500, detail=result)
-
-    if browser_lease_active():
-        pause_mpv_for_browser()
+    browser_active = browser_lease_active()
+    state = queue_snapshot()
+    if state["current_index"] < 0:
+        raise HTTPException(status_code=400, detail="No previous track")
+    if state["current_index"] > 0:
+        target = state["current_index"] - 1
+    elif mpv_property("loop-playlist") == "inf":
+        target = len(state["items"]) - 1
+    else:
+        raise HTTPException(status_code=400, detail="No previous track")
+    with queue_lock:
+        queue_state.update({"current_index": target, "position": 0.0})
+    save_queue_state()
+    if browser_active:
         browser_playback.update({"position": 0.0, "paused": False})
         browser_state_changed()
+    render_queue_to_mpv()
     return {"status": "ok"}
 
 @app.post("/api/player/shuffle")
 def toggle_shuffle():
-    global shuffle_enabled
-    with mpv_lock:
-        playlist = mpv_property("playlist") or []
-        current_position = mpv_property("playlist-pos")
-        if current_position is None or current_position < 0:
-            raise HTTPException(status_code=400, detail="Queue is empty")
-
-        upcoming = playlist[current_position + 1:]
+    state = queue_snapshot()
+    if state["current_index"] < 0:
+        raise HTTPException(status_code=400, detail="Queue is empty")
+    with queue_lock:
+        upcoming = queue_state["items"][queue_state["current_index"] + 1:]
         random.shuffle(upcoming)
-        for target_position, item in enumerate(upcoming, start=current_position + 1):
-            source_position = next(
-                index for index, candidate in enumerate(playlist)
-                if candidate["id"] == item["id"]
-            )
-            if source_position != target_position:
-                result = mpv_command(["playlist-move", source_position, target_position])
-                if result.get("error") != "success":
-                    raise HTTPException(status_code=500, detail="Unable to shuffle upcoming tracks")
-                moved = playlist.pop(source_position)
-                playlist.insert(target_position, moved)
-
-    shuffle_enabled = True
-    save_shuffle_state()
+        queue_state["items"][queue_state["current_index"] + 1:] = upcoming
+        queue_state["shuffle"] = True
+    save_queue_state()
+    render_queue_to_mpv()
 
     return {
-        "shuffle": shuffle_enabled
+        "shuffle": True
     }
 
 @app.get("/api/player/shuffle")
 def get_shuffle():
-    load_shuffle_state()
-    return {
-        "shuffle": shuffle_enabled
-    }
+    return {"shuffle": queue_snapshot()["shuffle"]}
 
 @app.post("/api/player/repeat")
 def cycle_repeat():
@@ -1677,9 +1692,10 @@ def get_repeat():
 @app.post("/api/player/seek")
 def seek(request: SeekRequest):
     position = max(0, request.position)
-
+    with queue_lock:
+        queue_state["position"] = position
+    save_queue_state()
     result = mpv_command(["set_property", "time-pos", position])
-
     if result.get("error") != "success":
         raise HTTPException(status_code=500, detail=result)
 
@@ -1711,39 +1727,16 @@ def set_volume(request: VolumeRequest):
 @app.post("/api/player/play-next/{song_id}")
 def play_next_song(song_id: str):
     song = navidrome_song(song_id)
-    with mpv_lock:
-        playlist = mpv_property("playlist")
-        track_is_paused = mpv_property("pause") is True
-        track_is_playing = mpv_property("core-idle") is False
-
-        if not playlist or not (track_is_paused or track_is_playing):
-            result = play_song_queue([song])
-            return {
-                "status": result["status"],
-                "song_id": song_id,
-                "inserted": False,
-            }
-
-        cache_queue_song_metadata(song)
-        result = mpv_command([
-            "loadfile",
-            navidrome_stream_url(song_id),
-            "insert-next",
-        ])
-
-        if result.get("error") != "success":
-            raise HTTPException(
-                status_code=500,
-                detail="Unable to add song to the queue",
-            )
-
-        save_queue_metadata()
-
-        return {
-            "status": "queued_next",
-            "song_id": song_id,
-            "inserted": True,
-        }
+    state = queue_snapshot()
+    if not state["items"] or state["current_index"] < 0:
+        result = play_song_queue([song])
+        return {"status": result["status"], "song_id": song_id, "inserted": False}
+    with queue_lock:
+        queue_state["items"].insert(queue_state["current_index"] + 1, queue_item_from_song(song))
+        queue_state["shuffle"] = False
+    save_queue_state()
+    render_queue_to_mpv()
+    return {"status": "queued_next", "song_id": song_id, "inserted": True}
 
 @app.post("/api/player/play/{song_id}")
 def play_song(song_id: str):
@@ -1757,50 +1750,27 @@ def play_song(song_id: str):
 
 @app.get("/api/status")
 def status():
-    metadata = mpv_metadata()
-
-    playlist_result = mpv_command(["get_property", "playlist"])
-    playlist = playlist_result.get("data") or []
-    save_playback_state(playlist)
-
-    current_song_id = None
-    cover_art = None
-    current_index = next((index for index, item in enumerate(playlist) if item.get("current")), -1)
-
-    if current_index >= 0:
-        item = playlist[current_index]
-        filename = item.get("filename", "")
-
-        try:
-            query = parse_qs(urlparse(filename).query)
-            current_song_id = query.get("id", [None])[0]
-        except Exception:
-            current_song_id = None
-
-        if current_song_id:
-            cover_art = queue_metadata.get(current_song_id, {}).get("coverArt")
-
     browser_active = browser_lease_active()
-    position = browser_playback["position"] if browser_active else (mpv_property("time-pos") or 0)
-    duration = mpv_property("duration") or 0
+    if not browser_active:
+        sync_queue_from_mpv()
+    state = queue_snapshot()
+    items = state["items"]
+    current_index = state["current_index"]
+    current = items[current_index] if 0 <= current_index < len(items) else {}
+    position = browser_playback["position"] if browser_active else state["position"]
+    duration = current.get("duration") or (mpv_property("duration") or 0)
     total_runtime = 0
     upcoming_runtime = 0
     up_next = None
 
-    for index, item in enumerate(playlist):
-        try:
-            song_id = parse_qs(urlparse(item.get("filename", "")).query).get("id", [None])[0]
-        except Exception:
-            song_id = None
-        song_duration = queue_metadata.get(song_id, {}).get("duration") or 0
+    for index, item in enumerate(items):
+        song_duration = item.get("duration") or 0
         total_runtime += song_duration
         if index > current_index:
             upcoming_runtime += song_duration
         if index == current_index + 1:
-            metadata_for_next = queue_metadata.get(song_id, {})
             up_next = {
-                "title": metadata_for_next.get("title") or item.get("title"),
-                "artist": metadata_for_next.get("artist"),
+                "title": item.get("title"), "artist": item.get("artist"),
             }
 
     remaining_runtime = upcoming_runtime
@@ -1811,13 +1781,11 @@ def status():
         "name": "PiMusic",
         "status": "ok",
         "player": {
-            "idle": not bool(playlist) if browser_active else mpv_property("idle-active"),
-            "paused": browser_playback["paused"] if browser_active else mpv_property("pause"),
-            "title": metadata.get("title") or mpv_property("media-title"),
-            "artist": metadata.get("artist"),
-            "album": metadata.get("album"),
-            "song_id": current_song_id,
-            "coverArt": cover_art,
+            "idle": not bool(items),
+            "paused": browser_playback["paused"] if browser_active else state["paused"],
+            "title": current.get("title"), "artist": current.get("artist"),
+            "album": current.get("album"), "song_id": current.get("song_id"),
+            "coverArt": current.get("coverArt"),
             "position": position,
             "duration": duration,
             "volume": mpv_property("volume"),
@@ -1826,7 +1794,7 @@ def status():
         },
         "queue": {
             "up_next": up_next,
-            "tracks_remaining": max(0, len(playlist) - current_index - 1),
+            "tracks_remaining": max(0, len(items) - current_index - 1),
             "remaining_runtime": remaining_runtime,
             "total_runtime": total_runtime,
         },
@@ -1836,6 +1804,9 @@ def status():
 def play():
     if browser_lease_active():
         browser_playback["paused"] = False
+        with queue_lock:
+            queue_state["paused"] = False
+        save_queue_state()
         pause_mpv_for_browser()
         browser_state_changed()
         return {"status": "playing"}
@@ -1844,6 +1815,9 @@ def play():
     if result.get("error") != "success":
         raise HTTPException(status_code=500, detail=result)
 
+    with queue_lock:
+        queue_state["paused"] = False
+    save_queue_state()
     return {"status": "playing"}
 
 
@@ -1851,6 +1825,9 @@ def play():
 def pause():
     if browser_lease_active():
         browser_playback["paused"] = True
+        with queue_lock:
+            queue_state["paused"] = True
+        save_queue_state()
         pause_mpv_for_browser()
         browser_state_changed()
         return {"status": "paused"}
@@ -1859,6 +1836,9 @@ def pause():
     if result.get("error") != "success":
         raise HTTPException(status_code=500, detail=result)
 
+    with queue_lock:
+        queue_state["paused"] = True
+    save_queue_state()
     return {"status": "paused"}
 
 @app.get("/api/bluetooth/status")

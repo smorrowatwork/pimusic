@@ -748,7 +748,7 @@ async function loadQueue() {
 
   for (const item of data.queue) {
     const row = document.createElement("div");
-    const queueIds = data.queue.map(entry => entry.mpv_id);
+    const queueIds = data.queue.map(entry => entry.queue_id);
     const handle = document.createElement("button");
     handle.className = "queue-drag-handle";
     handle.textContent = "⠿";
@@ -795,7 +795,7 @@ async function loadQueue() {
       removeButton.disabled = true;
       try {
         await apiJson(
-          `/api/player/queue/${item.position}?mpv_id=${encodeURIComponent(item.mpv_id)}`,
+          `/api/player/queue/${item.position}?queue_id=${encodeURIComponent(item.queue_id)}`,
           { method: "DELETE" }
         );
         await refreshStatus();
