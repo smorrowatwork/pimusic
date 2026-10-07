@@ -2,7 +2,7 @@
 
 PiMusic turns a Raspberry Pi Zero 2 W into a headless, browser-controlled music appliance. It streams a [Navidrome](https://www.navidrome.org/) library through MPV and plays audio on the Pi through PipeWire, Bluetooth, USB, HDMI, or another local audio output.
 
-The interface supports search, playlists, album playback, queue reordering, Play Next, Append, Mix into Queue, Shuffle Upcoming, Wi-Fi setup, Bluetooth speaker selection, queue recovery, and persistent volume.
+The interface supports search, playlists, album playback, queue reordering, Play Next, Append, Mix into Queue, Shuffle Upcoming, Wi-Fi setup, Bluetooth speaker selection, queue recovery, persistent volume, and an explicit browser listening mode.
 
 For durable project context beyond setup and operation, see [architecture](docs/architecture.md), [hardware assumptions](docs/hardware.md), and [development history](docs/development-history.md). Contributors using Codex should start with [AGENTS.md](AGENTS.md).
 
@@ -129,7 +129,7 @@ wpctl status -n
 bluetoothctl devices Connected
 ```
 
-Click a song to replace the queue. Album and playlist pages offer **Play**, **Append to Queue**, and **Mix into Queue**. **Shuffle Upcoming** preserves the current track and randomizes only tracks that follow it.
+Click a song to replace the queue. Album and playlist pages offer **Play**, **Append to Queue**, and **Mix into Queue**. **Shuffle Upcoming** preserves the current track and randomizes only tracks that follow it. Choose **Listen in This Browser** to play the current queue through the controlling device; choose **Play on Pi** to hand it back to the Pi at the same track and position. Only the browser that starts browser listening can hand playback back, and closing or losing that browser pauses playback instead of unexpectedly starting the Pi speaker.
 
 ### 5. Optional fallback hotspot
 

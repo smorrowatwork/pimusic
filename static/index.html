@@ -94,6 +94,13 @@
   >
 </div>
 
+<div class="output-controls" aria-label="Playback output">
+  <span id="output-status">Playing on Pi audio</span>
+  <button id="browser-output-button" type="button" onclick="useBrowserOutput()">Listen in This Browser</button>
+  <button id="pi-output-button" type="button" onclick="usePiOutput()" hidden>Play on Pi</button>
+</div>
+<audio id="browser-audio" preload="metadata"></audio>
+
     </div>
   </div>
 </section>

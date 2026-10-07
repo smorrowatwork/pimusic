@@ -7,14 +7,16 @@ import os
 import re
 import tempfile
 import random
+import secrets
 from threading import RLock
 
 from urllib.parse import urlparse, parse_qs
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi import HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel
 
 
@@ -25,13 +27,23 @@ NAVIDROME_TOKEN = os.environ["NAVIDROME_TOKEN"]
 
 app = FastAPI(title="PiMusic")
 
-QUEUE_METADATA_FILE = Path("/home/stevenm/.config/pimusic/queue.json")
+PIMUSIC_STATE_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "pimusic"
+QUEUE_METADATA_FILE = PIMUSIC_STATE_DIR / "queue.json"
 SHUFFLE_STATE_FILE = QUEUE_METADATA_FILE.with_name("shuffle.json")
 PLAYBACK_STATE_FILE = QUEUE_METADATA_FILE.with_name("playback.json")
 VOLUME_STATE_FILE = QUEUE_METADATA_FILE.with_name("volume.json")
+OUTPUT_STATE_FILE = QUEUE_METADATA_FILE.with_name("browser-playback.json")
 queue_metadata = {}
 shuffle_enabled = False
 last_playback_state = None
+browser_playback = {
+    "mode": "pi",
+    "lease": None,
+    "lease_expires": 0,
+    "paused": True,
+    "position": 0.0,
+    "revision": 0,
+}
 
 class VolumeRequest(BaseModel):
     volume: float
@@ -50,10 +62,23 @@ class WifiConnectRequest(BaseModel):
     ssid: str
     password: str | None = None
 
+class BrowserProgressRequest(BaseModel):
+    lease: str
+    position: float = 0
+    paused: bool = True
+
+class BrowserLeaseRequest(BaseModel):
+    lease: str
+
+class BrowserEndedRequest(BaseModel):
+    lease: str
+
 MPV_SOCKET = "/tmp/pimusic-mpv.sock"
 HOTSPOT_CONTROL = "/usr/local/bin/pimusic-hotspot-control"
 mpv_lock = RLock()
+playback_lock = RLock()
 PIMUSIC_VERSION = "1.0"
+BROWSER_LEASE_SECONDS = 15
 
 def split_nmcli_fields(line: str):
     fields = []
@@ -633,6 +658,92 @@ def navidrome_stream_url(song_id: str):
         )
     )
 
+def save_browser_playback():
+    """Persist only Pi-owned browser-session state; the lease itself is never reused."""
+    OUTPUT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    state = {
+        "mode": browser_playback["mode"],
+        "paused": browser_playback["paused"],
+        "position": browser_playback["position"],
+        "revision": browser_playback["revision"],
+    }
+    temporary = OUTPUT_STATE_FILE.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state), encoding="utf-8")
+    temporary.replace(OUTPUT_STATE_FILE)
+
+def load_browser_playback():
+    """A browser cannot survive a backend restart, so always return to paused Pi mode."""
+    try:
+        state = json.loads(OUTPUT_STATE_FILE.read_text(encoding="utf-8"))
+        browser_playback["position"] = max(0, float(state.get("position", 0)))
+        browser_playback["revision"] = int(state.get("revision", 0))
+    except (OSError, ValueError, TypeError):
+        pass
+    browser_playback.update({
+        "mode": "pi",
+        "lease": None,
+        "lease_expires": 0,
+        "paused": True,
+    })
+
+def browser_lease_active(lease=None):
+    if browser_playback["mode"] != "browser":
+        return False
+    if time.monotonic() >= browser_playback["lease_expires"]:
+        browser_playback.update({"mode": "pi", "lease": None, "lease_expires": 0, "paused": True})
+        mpv_command(["set_property", "pause", True])
+        save_browser_playback()
+        return False
+    return lease is None or secrets.compare_digest(lease, browser_playback["lease"] or "")
+
+def browser_state_changed():
+    browser_playback["revision"] += 1
+    save_browser_playback()
+
+def pause_mpv_for_browser():
+    result = mpv_command(["set_property", "pause", True])
+    if result.get("error") != "success":
+        raise HTTPException(status_code=503, detail="Unable to pause Pi audio for browser playback")
+
+def browser_stream_response(song_id: str, request: Request):
+    lease = request.query_params.get("lease", "")
+    if not browser_lease_active(lease):
+        raise HTTPException(status_code=403, detail="Browser playback session is no longer active")
+
+    headers = {}
+    if request.headers.get("range"):
+        headers["range"] = request.headers["range"]
+    client = httpx.Client(timeout=httpx.Timeout(30.0, read=60.0))
+    upstream = client.send(
+        client.build_request("GET", navidrome_stream_url(song_id), headers=headers),
+        stream=True,
+    )
+    if upstream.status_code >= 400:
+        upstream.close()
+        client.close()
+        raise HTTPException(status_code=502, detail="Unable to stream this track from Navidrome")
+
+    response_headers = {
+        name: value for name, value in upstream.headers.items()
+        if name.lower() in {"accept-ranges", "content-length", "content-range"}
+    }
+    media_type = upstream.headers.get("content-type", "audio/mpeg")
+
+    def body():
+        try:
+            yield from upstream.iter_bytes()
+        finally:
+            upstream.close()
+            client.close()
+
+    return StreamingResponse(
+        body(),
+        status_code=upstream.status_code,
+        media_type=media_type,
+        headers=response_headers,
+        background=BackgroundTask(lambda: (upstream.close(), client.close())),
+    )
+
 def cache_queue_song_metadata(song):
     song_id = song["id"]
     cover_art = song.get("coverArt")
@@ -723,7 +834,12 @@ def play_song_queue(songs):
                     detail=result,
                 )
 
-        mpv_command(["set_property", "pause", False])
+        if browser_lease_active():
+            pause_mpv_for_browser()
+            browser_playback.update({"position": 0.0, "paused": False})
+            browser_state_changed()
+        else:
+            mpv_command(["set_property", "pause", False])
 
     return {
         "status": "playing",
@@ -772,6 +888,7 @@ load_queue_metadata()
 
 @app.on_event("startup")
 def restore_playback_queue():
+    load_browser_playback()
     restore_volume_state()
     try:
         if mpv_property("playlist"):
@@ -811,6 +928,73 @@ def get_cover_art(cover_art_id: str):
         content=response.content,
         media_type=response.headers.get("content-type", "image/jpeg"),
     )
+
+@app.post("/api/output/browser")
+def use_browser_output():
+    playlist = mpv_property("playlist") or []
+    if not playlist:
+        raise HTTPException(status_code=400, detail="Choose music before listening in this browser")
+    position = max(0, float(mpv_property("time-pos") or 0))
+    paused = mpv_property("pause") is True or mpv_property("idle-active") is True
+    lease = secrets.token_urlsafe(32)
+    browser_playback.update({
+        "mode": "browser",
+        "lease": lease,
+        "lease_expires": time.monotonic() + BROWSER_LEASE_SECONDS,
+        "paused": paused,
+        "position": position,
+    })
+    pause_mpv_for_browser()
+    browser_state_changed()
+    return {"mode": "browser", "lease": lease, "position": position, "paused": paused, "revision": browser_playback["revision"]}
+
+@app.post("/api/output/pi")
+def use_pi_output(request: BrowserLeaseRequest):
+    if not browser_lease_active(request.lease):
+        raise HTTPException(status_code=409, detail="This browser no longer owns the playback session")
+    position = max(0, browser_playback["position"])
+    paused = browser_playback["paused"]
+    browser_playback.update({"mode": "pi", "lease": None, "lease_expires": 0})
+    result = mpv_command(["set_property", "time-pos", position])
+    if result.get("error") != "success":
+        raise HTTPException(status_code=503, detail="Unable to resume Pi audio")
+    result = mpv_command(["set_property", "pause", paused])
+    if result.get("error") != "success":
+        raise HTTPException(status_code=503, detail="Unable to resume Pi audio")
+    browser_state_changed()
+    return {"mode": "pi", "position": position, "paused": paused}
+
+@app.post("/api/browser/progress")
+def browser_progress(request: BrowserProgressRequest):
+    if not browser_lease_active(request.lease):
+        raise HTTPException(status_code=409, detail="Browser playback session expired")
+    browser_playback.update({
+        "lease_expires": time.monotonic() + BROWSER_LEASE_SECONDS,
+        "position": max(0, request.position),
+        "paused": request.paused,
+    })
+    # Keep MPV's dormant playlist at the browser position so queue changes and
+    # a later handoff use the same canonical track and time.
+    mpv_command(["set_property", "time-pos", browser_playback["position"]])
+    pause_mpv_for_browser()
+    save_browser_playback()
+    return {"revision": browser_playback["revision"]}
+
+@app.post("/api/browser/ended")
+def browser_ended(request: BrowserEndedRequest):
+    if not browser_lease_active(request.lease):
+        raise HTTPException(status_code=409, detail="Browser playback session expired")
+    result = mpv_command(["playlist-next", "force"])
+    if result.get("error") != "success":
+        raise HTTPException(status_code=503, detail="Unable to advance the queue")
+    pause_mpv_for_browser()
+    browser_playback.update({"position": 0.0, "paused": False})
+    browser_state_changed()
+    return {"status": "advanced", "revision": browser_playback["revision"]}
+
+@app.get("/api/browser/stream/{song_id}")
+def browser_stream(song_id: str, request: Request):
+    return browser_stream_response(song_id, request)
 
 @app.post("/api/bluetooth/connect-device")
 def bluetooth_connect_device(request: BluetoothDeviceRequest):
@@ -966,7 +1150,12 @@ def play_queue_position(position: int):
             detail=result,
         )
 
-    mpv_command(["set_property", "pause", False])
+    if browser_lease_active():
+        pause_mpv_for_browser()
+        browser_playback.update({"position": 0.0, "paused": False})
+        browser_state_changed()
+    else:
+        mpv_command(["set_property", "pause", False])
 
     return {
         "status": "playing",
@@ -1251,6 +1440,10 @@ def next_track():
     if result.get("error") != "success":
         raise HTTPException(status_code=500, detail=result)
 
+    if browser_lease_active():
+        pause_mpv_for_browser()
+        browser_playback.update({"position": 0.0, "paused": False})
+        browser_state_changed()
     return {"status": "ok"}
 
 
@@ -1261,6 +1454,10 @@ def previous_track():
     if result.get("error") != "success":
         raise HTTPException(status_code=500, detail=result)
 
+    if browser_lease_active():
+        pause_mpv_for_browser()
+        browser_playback.update({"position": 0.0, "paused": False})
+        browser_state_changed()
     return {"status": "ok"}
 
 @app.post("/api/player/shuffle")
@@ -1348,6 +1545,10 @@ def seek(request: SeekRequest):
     if result.get("error") != "success":
         raise HTTPException(status_code=500, detail=result)
 
+    if browser_lease_active():
+        pause_mpv_for_browser()
+        browser_playback["position"] = position
+        browser_state_changed()
     return {
         "status": "ok",
         "position": position
@@ -1441,7 +1642,8 @@ def status():
         if current_song_id:
             cover_art = queue_metadata.get(current_song_id, {}).get("coverArt")
 
-    position = mpv_property("time-pos") or 0
+    browser_active = browser_lease_active()
+    position = browser_playback["position"] if browser_active else (mpv_property("time-pos") or 0)
     duration = mpv_property("duration") or 0
     total_runtime = 0
     upcoming_runtime = 0
@@ -1471,8 +1673,8 @@ def status():
         "name": "PiMusic",
         "status": "ok",
         "player": {
-            "idle": mpv_property("idle-active"),
-            "paused": mpv_property("pause"),
+            "idle": not bool(playlist) if browser_active else mpv_property("idle-active"),
+            "paused": browser_playback["paused"] if browser_active else mpv_property("pause"),
             "title": metadata.get("title") or mpv_property("media-title"),
             "artist": metadata.get("artist"),
             "album": metadata.get("album"),
@@ -1480,7 +1682,9 @@ def status():
             "coverArt": cover_art,
             "position": position,
             "duration": duration,
-            "volume": mpv_property("volume")
+            "volume": mpv_property("volume"),
+            "output": "browser" if browser_active else "pi",
+            "revision": browser_playback["revision"] if browser_active else 0,
         },
         "queue": {
             "up_next": up_next,
@@ -1492,6 +1696,11 @@ def status():
 
 @app.post("/api/player/play")
 def play():
+    if browser_lease_active():
+        browser_playback["paused"] = False
+        pause_mpv_for_browser()
+        browser_state_changed()
+        return {"status": "playing"}
     result = mpv_command(["set_property", "pause", False])
 
     if result.get("error") != "success":
@@ -1502,6 +1711,11 @@ def play():
 
 @app.post("/api/player/pause")
 def pause():
+    if browser_lease_active():
+        browser_playback["paused"] = True
+        pause_mpv_for_browser()
+        browser_state_changed()
+        return {"status": "paused"}
     result = mpv_command(["set_property", "pause", True])
 
     if result.get("error") != "success":

@@ -13,6 +13,7 @@ This is a concise record of verified project context, not a debugging transcript
 - When `pimusic-setup` is active, the fallback service must not repeatedly reactivate it or attempt a competing Wi-Fi activation: either action disconnects setup clients. The web connection flow pauses fallback during its explicit NetworkManager connection attempt, then resumes it once the attempt has completed.
 - The setup-hotspot flow has been tested end-to-end. Submitting normal Wi-Fi credentials necessarily removes the setup access point, so the browser must treat a post-submission network loss as expected and direct the user back to normal Wi-Fi. NetworkManager failures are summarized into safe authentication, authorization, availability, or timeout messages; raw command output is not sent to the browser.
 - The constrained hotspot helper now provides a lightweight shared provisioning status: `READY`, `TRYING_WIFI`, `PROVISIONING`, or `CONNECTING_WIFI`. It is derived from NetworkManager and a root-owned runtime marker, and is consumed by the web UI. This is a foundation for the later physical button, not a complete event-driven state machine.
+- Browser listening is an explicit, leased output mode. MPV remains paused while one browser renders the same queue through a PiMusic stream proxy; progress is mirrored into MPV for queue operations and handoff back to the Pi. Browser volume is local, and an expired browser lease pauses playback.
 - The development Pi has a retained USB Ethernet gadget recovery path. It is useful when normal Wi-Fi is unavailable, but it is a local development-machine configuration rather than a PiMusic installation feature.
 - Full VS Code Remote plus Codex workloads on the Pi have exhausted RAM/zram and made it nearly unresponsive. Prefer development on a PC and use the Pi mainly for deployment and test; keep runtime dependencies lightweight.
 
@@ -44,12 +45,6 @@ This is the single list of unimplemented PiMusic features and improvements discu
 ### Make installation paths portable
 
 - Remove the hard-coded `/home/stevenm` queue-state path so the application works for the configured service user on a fresh Pi installation.
-
-### Add optional browser playback
-
-- Support an explicit browser listening mode for the controlling phone or computer's local speakers, headphones, or Bluetooth output. It must not create simultaneous Pi and browser audio or diverging queue positions.
-- Keep one backend-owned canonical queue and make MPV or one leased browser audio element its exclusive renderer. Switch output by pausing the old renderer and resuming the same track and position on the new one; if the handoff fails, leave both paused. Other open pages remain queue controllers, not additional listeners.
-- Continue to proxy browser audio, including range requests for seeking, through the Pi so Navidrome credentials remain server-side. Browser volume is local and separate from persisted Pi volume. A lost browser lease pauses playback, and browser mode never survives a Pi restart.
 
 ### Configure another Navidrome server
 

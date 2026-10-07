@@ -11,6 +11,10 @@ const elapsedTime = document.getElementById("elapsed-time");
 const totalTime = document.getElementById("total-time");
 const coverArt = document.getElementById("coverArt");
 const playPauseButton = document.getElementById("playPauseButton");
+const browserAudio = document.getElementById("browser-audio");
+const outputStatus = document.getElementById("output-status");
+const browserOutputButton = document.getElementById("browser-output-button");
+const piOutputButton = document.getElementById("pi-output-button");
 
 let lastCurrentSongId = null;
 let queueMovePending = false;
@@ -21,6 +25,11 @@ let messageTimer = null;
 let playNextPending = false;
 let wifiSetupPending = false;
 let wifiConnectPending = false;
+let browserLease = sessionStorage.getItem("pimusic-browser-lease");
+let browserSongId = null;
+let browserOutputActive = false;
+let browserProgressPending = false;
+let browserRevision = null;
 
 function showError(error) {
   const message = document.getElementById("app-message");
@@ -410,6 +419,152 @@ document.getElementById("wifi-connect-form").addEventListener("submit", async ev
     connectButton.disabled = false;
   }
 });
+
+async function useBrowserOutput() {
+  browserOutputButton.disabled = true;
+  try {
+    const data = await apiJson("/api/output/browser", { method: "POST" });
+    browserLease = data.lease;
+    sessionStorage.setItem("pimusic-browser-lease", browserLease);
+    await refreshStatus();
+  } catch (error) {
+    showError(error);
+  } finally {
+    browserOutputButton.disabled = false;
+  }
+}
+
+async function usePiOutput() {
+  if (!browserLease) return;
+  piOutputButton.disabled = true;
+  try {
+    await apiJson("/api/output/pi", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lease: browserLease })
+    });
+    browserAudio.pause();
+    browserAudio.removeAttribute("src");
+    browserAudio.load();
+    browserSongId = null;
+    browserLease = null;
+    sessionStorage.removeItem("pimusic-browser-lease");
+    await refreshStatus();
+  } catch (error) {
+    showError(error);
+  } finally {
+    piOutputButton.disabled = false;
+  }
+}
+
+async function reportBrowserProgress() {
+  if (!browserOutputActive || !browserLease || browserProgressPending) return;
+  browserProgressPending = true;
+  try {
+    await apiJson("/api/browser/progress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lease: browserLease,
+        position: Number.isFinite(browserAudio.currentTime) ? browserAudio.currentTime : 0,
+        paused: browserAudio.paused
+      })
+    });
+  } catch (error) {
+    if (!error.networkError) showError(error);
+  } finally {
+    browserProgressPending = false;
+  }
+}
+
+function startBrowserAudio(player) {
+  const ownsLease = Boolean(browserLease);
+  browserOutputActive = player.output === "browser" && ownsLease;
+  if (player.output !== "browser") {
+    outputStatus.textContent = "Playing on Pi audio";
+    browserOutputButton.hidden = false;
+    piOutputButton.hidden = true;
+    browserAudio.controls = false;
+    browserAudio.classList.remove("is-active");
+    if (browserLease) {
+      browserLease = null;
+      sessionStorage.removeItem("pimusic-browser-lease");
+    }
+    if (browserSongId) {
+      browserAudio.pause();
+      browserAudio.removeAttribute("src");
+      browserAudio.load();
+      browserSongId = null;
+      browserRevision = null;
+    }
+    return;
+  }
+
+  if (!ownsLease) {
+    outputStatus.textContent = "Playing in another browser";
+    browserOutputButton.hidden = true;
+    piOutputButton.hidden = true;
+    browserAudio.controls = false;
+    browserAudio.classList.remove("is-active");
+    return;
+  }
+
+  outputStatus.textContent = "Playing in this browser";
+  browserOutputButton.hidden = true;
+  piOutputButton.hidden = false;
+  browserAudio.controls = true;
+  browserAudio.classList.add("is-active");
+  if (!player.song_id) return;
+
+  if (browserSongId !== player.song_id) {
+    browserSongId = player.song_id;
+    browserRevision = player.revision;
+    browserAudio.dataset.loading = "true";
+    browserAudio.src = `/api/browser/stream/${encodeURIComponent(player.song_id)}?lease=${encodeURIComponent(browserLease)}`;
+    browserAudio.load();
+    browserAudio.onloadedmetadata = () => {
+      delete browserAudio.dataset.loading;
+      if (Math.abs(browserAudio.currentTime - (player.position || 0)) > 0.5) {
+        browserAudio.currentTime = player.position || 0;
+      }
+      if (!player.paused) browserAudio.play().catch(showError);
+    };
+  } else if (browserRevision !== player.revision) {
+    browserRevision = player.revision;
+    if (Math.abs(browserAudio.currentTime - (player.position || 0)) > 0.5) {
+      browserAudio.currentTime = player.position || 0;
+    }
+  }
+
+  if (player.paused) {
+    browserAudio.pause();
+  } else {
+    browserAudio.play().catch(() => {
+      outputStatus.textContent = "Tap Play to start browser audio";
+    });
+  }
+}
+
+browserAudio.addEventListener("ended", async () => {
+  if (!browserOutputActive || !browserLease) return;
+  try {
+    await apiJson("/api/browser/ended", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lease: browserLease })
+    });
+    await refreshStatus();
+    await loadQueue();
+  } catch (error) {
+    showError(error);
+  }
+});
+
+browserAudio.addEventListener("play", reportBrowserProgress);
+browserAudio.addEventListener("pause", () => {
+  if (!browserAudio.dataset.loading) reportBrowserProgress();
+});
+setInterval(reportBrowserProgress, 5000);
 
 function formatTime(seconds) {
   if (!Number.isFinite(seconds)) {
@@ -933,6 +1088,7 @@ async function loadAlbum(albumId, artistId) {
       const response = await fetch("/api/status");
       const data = await response.json();
       const player = data.player;
+      startBrowserAudio(player);
 
       if (player.coverArt) {
         const coverUrl = `/api/cover/${encodeURIComponent(player.coverArt)}`;
@@ -979,7 +1135,9 @@ async function loadAlbum(albumId, artistId) {
       elapsedTime.textContent = formatTime(position);
       totalTime.textContent = formatTime(duration);
 
-      if (player.volume !== null) {
+      if (player.output === "browser") {
+        volume.value = Math.round(browserAudio.volume * 100);
+      } else if (player.volume !== null) {
         volume.value = player.volume;
       }
     }
@@ -1004,6 +1162,7 @@ async function loadAlbum(albumId, artistId) {
 
     seek.addEventListener("change", async () => {
       try {
+        if (browserOutputActive) browserAudio.currentTime = Number(seek.value);
         await apiJson("/api/player/seek", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1016,6 +1175,10 @@ async function loadAlbum(albumId, artistId) {
 
     volume.addEventListener("change", async () => {
       try {
+        if (browserOutputActive) {
+          browserAudio.volume = Number(volume.value) / 100;
+          return;
+        }
         await apiJson("/api/player/volume", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -70,6 +70,12 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
 .volume-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
 .volume-icon { width: 24px; opacity: .8; text-align: center; }
 .volume-row input { flex: 1; max-width: 320px; }
+.output-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+#output-status { color: #8f93a0; font-size: .9rem; }
+#browser-output-button { background: rgba(96, 165, 250, .2); }
+#pi-output-button { background: rgba(192, 132, 252, .2); }
+#browser-audio { display: none; width: 100%; margin-top: 10px; }
+#browser-audio.is-active { display: block; }
 #coverArt { display: block; width: 240px; height: 240px; margin: 0; border-radius: 16px; object-fit: cover; box-shadow: 0 12px 32px rgba(0, 0, 0, .38); }
 
 #queue-card.is-collapsed #queue { display: none; }
@@ -102,6 +108,8 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
   #coverArt { width: min(72vw, 280px); height: min(72vw, 280px); }
   .now-playing { text-align: center; }
   .transport-controls, .secondary-controls, .volume-row { justify-content: center; }
+  .output-controls { justify-content: center; }
+  .output-controls button { flex: 1 1 100%; min-height: 48px; }
   .card-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
   .card-actions { width: 100%; }
   #wifi-controls .card-actions { margin-top: 14px; }
