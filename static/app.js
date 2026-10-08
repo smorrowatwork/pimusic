@@ -25,6 +25,7 @@ let messageTimer = null;
 let playNextPending = false;
 let wifiSetupPending = false;
 let wifiConnectPending = false;
+let savedWifiNetworksExpanded = false;
 let browserLease = sessionStorage.getItem("pimusic-browser-lease");
 let browserSongId = null;
 let browserOutputActive = false;
@@ -367,16 +368,61 @@ async function saveNavidromeConfig(event) {
 
 async function loadSavedWifiNetworks() {
   const container = document.getElementById("wifi-saved-networks");
+  container.textContent = "Loading saved networks…";
   try {
-    const response = await fetch("/api/wifi/saved");
-    const data = await response.json();
-    if (!response.ok) throw new Error();
+    const data = await apiJson("/api/wifi/saved");
     const connections = data.connections || [];
-    container.textContent = connections.length
-      ? `Saved networks: ${connections.map(connection => `${connection.name}${connection.autoconnect ? "" : " (manual)"}`).join(", ")}`
-      : "No saved Wi-Fi networks.";
-  } catch {
+    container.innerHTML = "";
+    if (!connections.length) {
+      container.textContent = "No saved Wi-Fi networks.";
+      return;
+    }
+    for (const connection of connections) {
+      const row = document.createElement("div");
+      row.className = "saved-wifi-network";
+      const details = document.createElement("span");
+      details.className = "saved-wifi-details";
+      details.textContent = `${connection.name}${connection.autoconnect ? "" : " (manual)"}`;
+      row.appendChild(details);
+      if (connection.active) {
+        const active = document.createElement("span");
+        active.className = "saved-wifi-active";
+        active.textContent = "Connected";
+        row.appendChild(active);
+      } else {
+        const forget = document.createElement("button");
+        forget.className = "forget-wifi-network";
+        forget.textContent = "Forget";
+        forget.onclick = () => forgetSavedWifiNetwork(connection, forget);
+        row.appendChild(forget);
+      }
+      container.appendChild(row);
+    }
+  } catch (error) {
     container.textContent = "Saved Wi-Fi networks unavailable.";
+    showError(error);
+  }
+}
+
+async function toggleSavedWifiNetworks() {
+  savedWifiNetworksExpanded = !savedWifiNetworksExpanded;
+  const toggle = document.getElementById("wifi-saved-toggle");
+  const container = document.getElementById("wifi-saved-networks");
+  toggle.textContent = savedWifiNetworksExpanded ? "Hide Saved Networks" : "Manage Saved Networks";
+  toggle.setAttribute("aria-expanded", String(savedWifiNetworksExpanded));
+  container.hidden = !savedWifiNetworksExpanded;
+  if (savedWifiNetworksExpanded) await loadSavedWifiNetworks();
+}
+
+async function forgetSavedWifiNetwork(connection, button) {
+  if (!window.confirm(`Forget saved Wi-Fi network “${connection.name}”?`)) return;
+  button.disabled = true;
+  try {
+    await apiJson(`/api/wifi/saved/${encodeURIComponent(connection.uuid)}`, { method: "DELETE" });
+    await loadSavedWifiNetworks();
+  } catch (error) {
+    showError(error);
+    button.disabled = false;
   }
 }
 
@@ -1250,8 +1296,6 @@ async function loadAlbum(albumId, artistId) {
     setInterval(refreshWifiSetupStatus, 10000);
     refreshSystemStatus();
     loadNavidromeConfig();
-    loadSavedWifiNetworks();
-
     refreshRepeat();
     refreshShuffle();
 

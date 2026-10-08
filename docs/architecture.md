@@ -26,7 +26,7 @@ Navidrome                         persistent MPV process
 - Controls one idle MPV process through its Unix-domain JSON IPC socket at `/tmp/pimusic-mpv.sock`, rather than launching a player per track.
 - Owns a durable queue record under the service user's `~/.config/pimusic/` directory: ordered queue entries with stable IDs, current index, position, paused state, and shuffle state. Volume is stored separately.
 - On FastAPI startup, restores that queue into MPV as the Pi renderer, then restores saved volume. Older metadata/playback files are migrated automatically. Ordinary add, remove, reorder, and shuffle edits are mirrored to MPV in place; a full renderer rebuild is reserved for recovery or a playback-changing action.
-- Provides Wi-Fi status/scan/connect and saved-profile endpoints through `nmcli`; connection failures are mapped to credential-safe, actionable messages rather than raw command output. A successful connection response includes the active Wi-Fi address when it can reach the browser. Bluetooth scanning, pairing, trust, connection, and PipeWire sink selection use `bluetoothctl` and `wpctl`.
+- Provides Wi-Fi status/scan/connect and saved-profile endpoints through `nmcli`; users can forget only a non-active saved Wi-Fi profile by its NetworkManager UUID, while the internal `pimusic-setup` profile is excluded. Connection failures are mapped to credential-safe, actionable messages rather than raw command output. A successful connection response includes the active Wi-Fi address when it can reach the browser. Bluetooth scanning, pairing, trust, connection, and PipeWire sink selection use `bluetoothctl` and `wpctl`.
 
 ### Browser/UI responsibilities
 

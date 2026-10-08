@@ -147,7 +147,10 @@
   </div>
   <div id="wifi-details"></div>
   <div id="wifi-setup-status"></div>
-  <div id="wifi-saved-networks"></div>
+  <div class="saved-network-manager">
+    <button id="wifi-saved-toggle" type="button" onclick="toggleSavedWifiNetworks()" aria-expanded="false">Manage Saved Networks</button>
+    <div id="wifi-saved-networks" hidden></div>
+  </div>
   <div class="card-actions wifi-setup-actions" id="wifi-setup-actions">
     <button id="wifi-setup-start" onclick="setWifiSetupMode('start')">Start Setup Hotspot</button>
     <button id="wifi-setup-stop" onclick="setWifiSetupMode('stop')">Exit Setup Mode</button>

@@ -20,7 +20,7 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
 .player-card, .section-card { margin-bottom: 20px; padding: 20px; border: 1px solid #30333d; border-radius: 18px; background: rgba(24, 26, 34, .92); box-shadow: 0 10px 28px rgba(0, 0, 0, .22); }
 .player-card { padding: 24px; border-radius: 20px; background: rgba(24, 26, 34, .95); }
 .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
-.card-actions, .connection-status, .search-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.card-actions, .connection-status, .search-row, .secondary-controls { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .connection-status { color: #8f93a0; font-size: .9rem; }
 .connection-status span + span::before { content: "•"; margin-right: 8px; color: #5f6470; }
 
@@ -31,12 +31,22 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
 #wifi-connect-status { display: inline-block; line-height: 1.4; }
 #wifi-details, #wifi-setup-status, #wifi-saved-networks { margin-bottom: 6px; }
 #wifi-controls .card-actions { margin-top: 12px; }
+.saved-network-manager { margin-top: 12px; }
+#wifi-saved-toggle { min-height: 48px; }
+#wifi-saved-networks { display: grid; gap: 8px; margin-top: 10px; }
+#wifi-saved-networks[hidden] { display: none; }
+.saved-wifi-network { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 0; border-bottom: 1px solid #292c35; }
+.saved-wifi-network:last-child { border-bottom: 0; }
+.saved-wifi-details { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.saved-wifi-active { color: #8dd59a; font-size: .9rem; }
+.forget-wifi-network { min-height: 44px; background: rgba(190, 70, 86, .22); }
+.forget-wifi-network:hover { background: rgba(220, 88, 105, .32); }
 #wifi-setup-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 #wifi-scan-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
 #wifi-setup-actions button, #wifi-scan-actions button { min-height: 48px; }
 #wifi-scan-status { align-self: center; }
 #wifi-network-list { margin-top: 10px; }
-#wifi-network-list > div, #bluetooth-device-list > div, #playlists > div, #searchResults > div { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid #292c35; }
+#wifi-network-list > div, #bluetooth-device-list > div, #playlists > div, #searchResults > div { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 4px; border-bottom: 1px solid #292c35; }
 #wifi-network-list > div:last-child, #bluetooth-device-list > div:last-child, #playlists > div:last-child, #searchResults > div:last-child { border-bottom: 0; }
 .wifi-network { flex: 1; text-align: left; }
 #wifi-connect-form { display: none; margin-top: 12px; }
@@ -83,10 +93,10 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
 #queue-card.is-collapsed .card-heading { margin-bottom: 0; }
 #search-card.is-collapsed .search-row, #search-card.is-collapsed #searchResults, #playlists-card.is-collapsed #playlists { display: none; }
 #search-card.is-collapsed .card-heading, #playlists-card.is-collapsed .card-heading { margin-bottom: 0; }
-#wifi-controls.is-collapsed .connection-status, #wifi-controls.is-collapsed #wifi-details, #wifi-controls.is-collapsed #wifi-setup-status, #wifi-controls.is-collapsed #wifi-saved-networks, #wifi-controls.is-collapsed .card-actions, #wifi-controls.is-collapsed #wifi-network-list, #wifi-controls.is-collapsed #wifi-connect-form, #bluetooth-controls.is-collapsed .connection-status, #bluetooth-controls.is-collapsed .card-actions, #bluetooth-controls.is-collapsed #bluetooth-device-list, #system-card.is-collapsed #system-status, #system-card.is-collapsed #navidrome-config-form { display: none; }
+#wifi-controls.is-collapsed .connection-status, #wifi-controls.is-collapsed #wifi-details, #wifi-controls.is-collapsed #wifi-setup-status, #wifi-controls.is-collapsed .saved-network-manager, #wifi-controls.is-collapsed .card-actions, #wifi-controls.is-collapsed #wifi-network-list, #wifi-controls.is-collapsed #wifi-connect-form, #bluetooth-controls.is-collapsed .connection-status, #bluetooth-controls.is-collapsed .card-actions, #bluetooth-controls.is-collapsed #bluetooth-device-list, #system-card.is-collapsed #system-status, #system-card.is-collapsed #navidrome-config-form { display: none; }
 #wifi-controls.is-collapsed .card-heading, #bluetooth-controls.is-collapsed .card-heading, #system-card.is-collapsed .card-heading { margin-bottom: 0; }
 .system-status, #system-status { color: #c8c8d2; line-height: 1.6; }
-#navidrome-config-form { display: grid; gap: 10px; max-width: 500px; margin-top: 18px; }
+#navidrome-config-form { display: grid; gap: 12px; max-width: 500px; margin-top: 18px; }
 #navidrome-config-form h3 { margin: 0; }
 #navidrome-config-form p, #navidrome-config-status { margin: 0; color: #858995; font-size: .9rem; line-height: 1.4; }
 #navidrome-config-form button { justify-self: start; }
@@ -96,7 +106,7 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
 #queue > div[style*="font-weight"] { background: rgba(155, 108, 255, .16); color: #d8b4fe; }
 .queue-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .queue-actions { display: flex; flex-shrink: 0; }
-.queue-actions button, .queue-drag-handle { min-width: 44px; min-height: 44px; padding: 6px; }
+.queue-actions button, .queue-drag-handle { min-width: 48px; min-height: 48px; padding: 6px; }
 .queue-drag-handle { touch-action: none; user-select: none; cursor: grab; }
 #queue > div.queue-dragging { opacity: .55; }
 #queue > div.queue-drop-target { outline: 2px solid #9b6cff; }
@@ -112,6 +122,8 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
   #coverArt { width: min(72vw, 280px); height: min(72vw, 280px); }
   .now-playing { text-align: center; }
   .transport-controls, .secondary-controls, .volume-row { justify-content: center; }
+  .secondary-controls { display: grid; grid-template-columns: 1fr; width: 100%; }
+  .secondary-controls button { min-height: 48px; }
   .output-controls { justify-content: center; }
   .output-controls button { flex: 1 1 100%; min-height: 48px; }
   .card-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
@@ -123,16 +135,31 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
   #wifi-controls .card-heading, #bluetooth-controls .card-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
   #wifi-controls .connection-status, #bluetooth-controls .connection-status { grid-column: 1 / -1; width: 100%; }
   #wifiToggleButton, #bluetoothToggleButton { grid-column: 2; grid-row: 1; }
-  .card-actions button, .queue-content-actions button { width: 100%; min-height: 48px; }
-  .search-row button { width: 100%; }
+  .card-actions button, .queue-content-actions button, .search-row button { width: 100%; min-height: 48px; }
+  .search-row { display: grid; grid-template-columns: 1fr; width: 100%; gap: 12px; }
+  .search-row input { width: 100%; min-height: 48px; }
+  #wifi-connect-form[style*="display: block"] { display: grid !important; grid-template-columns: 1fr; gap: 12px; width: 100%; }
+  #wifi-connect-form input, #wifi-connect-form button { width: 100%; min-height: 48px; }
+  .saved-network-manager, #wifi-saved-toggle { width: 100%; }
+  .saved-wifi-network { align-items: stretch; flex-wrap: wrap; }
+  .saved-wifi-details { flex-basis: 100%; }
+  .saved-wifi-active, .forget-wifi-network { width: 100%; min-height: 48px; }
+  #wifi-connect-status, #navidrome-config-status { min-height: 1.4em; }
+  #navidrome-config-form { width: 100%; max-width: none; gap: 12px; }
+  #navidrome-config-form input, #navidrome-config-form button { width: 100%; min-height: 48px; }
+  #navidrome-config-form button { justify-self: stretch; }
   #bluetooth-device-list > div { align-items: stretch; flex-wrap: wrap; }
   #bluetooth-device-list > div > span { flex-basis: 100%; overflow-wrap: anywhere; }
   #bluetooth-device-list > div > button { width: 100%; min-height: 48px; }
   .song-row { align-items: stretch; flex-wrap: wrap; }
   .song-row-label { flex-basis: 100%; }
-  .song-play-next { width: 100%; min-height: 44px; padding: 8px 10px; }
+  .song-play-next { width: 100%; min-height: 48px; padding: 8px 10px; }
   .collection-actions { display: grid; grid-template-columns: 1fr; width: 100%; }
   .collection-actions button { min-height: 48px; }
+  #playlists > div, #searchResults > div, #wifi-network-list > div { align-items: stretch; flex-wrap: wrap; padding: 10px 0; }
+  #playlists > div, #searchResults > div { min-height: 52px; }
+  #wifi-network-list > div > button { flex-basis: 100%; min-height: 48px; }
+  #wifi-network-list > div > span { padding: 0 2px; }
   #queue > div { flex-wrap: nowrap; gap: 8px; }
   .queue-label { flex-basis: auto; }
   .queue-actions { margin-left: 0; }

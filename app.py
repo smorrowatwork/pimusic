@@ -200,7 +200,7 @@ def wifi_networks():
 
 def saved_wifi_connections():
     result = subprocess.run(
-        ["nmcli", "-t", "-f", "NAME,TYPE,AUTOCONNECT", "connection", "show"],
+        ["nmcli", "-t", "-f", "UUID,NAME,TYPE,AUTOCONNECT", "connection", "show"],
         capture_output=True,
         text=True,
         timeout=10,
@@ -208,16 +208,58 @@ def saved_wifi_connections():
     if result.returncode != 0:
         raise HTTPException(status_code=503, detail="Unable to read saved Wi-Fi networks")
 
+    active_result = subprocess.run(
+        ["nmcli", "-t", "-f", "UUID,TYPE", "connection", "show", "--active"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if active_result.returncode != 0:
+        raise HTTPException(status_code=503, detail="Unable to read active Wi-Fi connection")
+
+    active_uuids = {
+        fields[0] for line in active_result.stdout.splitlines()
+        if len(fields := split_nmcli_fields(line)) >= 2 and fields[1] in ("wifi", "802-11-wireless")
+    }
     connections = []
     for line in result.stdout.splitlines():
         fields = split_nmcli_fields(line)
-        if len(fields) < 3 or fields[1] not in ("wifi", "802-11-wireless"):
+        if len(fields) < 4 or fields[2] not in ("wifi", "802-11-wireless"):
+            continue
+        connection_uuid, name, _, autoconnect = fields[:4]
+        # This root-owned appliance profile is not a user Wi-Fi network.
+        if name == "pimusic-setup":
             continue
         connections.append({
-            "name": fields[0],
-            "autoconnect": fields[2] == "yes",
+            "uuid": connection_uuid,
+            "name": name,
+            "autoconnect": autoconnect == "yes",
+            "active": connection_uuid in active_uuids,
         })
-    return {"connections": connections}
+    return {"connections": sorted(connections, key=lambda connection: connection["name"].lower())}
+
+
+def delete_saved_wifi_connection(connection_uuid: str):
+    if not re.fullmatch(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}", connection_uuid):
+        raise HTTPException(status_code=400, detail="Invalid saved Wi-Fi connection")
+    connection = next(
+        (item for item in saved_wifi_connections()["connections"] if item["uuid"] == connection_uuid),
+        None,
+    )
+    if connection is None:
+        raise HTTPException(status_code=404, detail="Saved Wi-Fi network not found")
+    if connection["active"]:
+        raise HTTPException(status_code=409, detail="Disconnect from that Wi-Fi network before forgetting it")
+
+    result = subprocess.run(
+        ["nmcli", "connection", "delete", "uuid", connection_uuid],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if result.returncode != 0:
+        raise HTTPException(status_code=503, detail=wifi_command_error(result, "Unable to forget that Wi-Fi network"))
+    return {"status": "forgotten", "name": connection["name"]}
 
 def wifi_command_error(result, fallback):
     """Return an actionable, credential-safe summary of an nmcli failure."""
@@ -1986,6 +2028,10 @@ def wifi_connect(request: WifiConnectRequest):
 @app.get("/api/wifi/saved")
 def wifi_saved_connections():
     return saved_wifi_connections()
+
+@app.delete("/api/wifi/saved/{connection_uuid}")
+def wifi_forget_connection(connection_uuid: str):
+    return delete_saved_wifi_connection(connection_uuid)
 
 def list_bluetooth_devices():
     result = subprocess.run(

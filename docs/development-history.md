@@ -13,11 +13,13 @@ This is a concise record of verified project context, not a debugging transcript
 - When `pimusic-setup` is active, the fallback service must not repeatedly reactivate it or attempt a competing Wi-Fi activation: either action disconnects setup clients. The web connection flow pauses fallback during its explicit NetworkManager connection attempt, then resumes it once the attempt has completed.
 - The setup-hotspot flow has been tested end-to-end. Submitting normal Wi-Fi credentials necessarily removes the setup access point, so the browser must treat a post-submission network loss as expected and direct the user back to normal Wi-Fi. NetworkManager failures are summarized into safe authentication, authorization, availability, or timeout messages; raw command output is not sent to the browser.
 - The constrained hotspot helper now provides a lightweight shared provisioning status: `READY`, `TRYING_WIFI`, `PROVISIONING`, or `CONNECTING_WIFI`. It is derived from NetworkManager and a root-owned runtime marker, and is consumed by the web UI. This is a foundation for the later physical button, not a complete event-driven state machine.
+- The Wi-Fi card can manage saved NetworkManager profiles independently of setup-hotspot mode. It lists profiles only on request, protects the active connection, excludes the internal `pimusic-setup` profile, and forgets other profiles by UUID after confirmation.
 - Browser listening is an explicit, leased output mode. MPV remains paused while one browser renders the backend-owned queue through a PiMusic stream proxy; the same persisted position and track are used for queue operations and handoff back to the Pi. Browser volume is local, and an expired five-minute browser lease pauses playback; the window accommodates background-tab timer throttling.
 - The optional Bluetooth reconnect installer saves a selected speaker through one root-owned MAC-validation helper and retries that trusted device at boot. The web service has no broader Bluetooth or root permission.
 - Navidrome server changes take a server address, username, and password from the local web UI; the Pi generates the salt and Subsonic token, validates them, and atomically saves only the derived credentials in the private PiMusic environment file. A successful change is applied only after the active queue has been cleared.
 - The optional `pimusic-gpio.service` runs as the PiMusic user and owns the provision button plus READY/SETUP LEDs. It consumes the same constrained provisioning-status helper as the web UI, and a three-second GPIO17 hold invokes only that helper's setup-start action.
 - Bluetooth speaker discovery is serialized in the backend and runs for up to 30 seconds; the UI disables its scan action while that request is active. This avoids overlapping BlueZ discovery requests, which can leave the adapter unable to scan until reset.
+- Card actions have a phone-focused responsive layout: touch targets are at least 48px where actions are presented, related controls have visible spacing, and forms or multi-action groups stack to one column on narrow screens without changing their behavior.
 - The development Pi has a retained USB Ethernet gadget recovery path. It is useful when normal Wi-Fi is unavailable, but it is a local development-machine configuration rather than a PiMusic installation feature.
 - Full VS Code Remote plus Codex workloads on the Pi have exhausted RAM/zram and made it nearly unresponsive. Prefer development on a PC and use the Pi mainly for deployment and test; keep runtime dependencies lightweight.
 
@@ -37,14 +39,10 @@ This is the single list of unimplemented PiMusic features and improvements discu
 - Provide a phone-friendly captive-portal-style setup experience when the temporary `PiMusic-Setup` access point is active. Normal-network discovery is available through the device hostname's mDNS name (for example, `pimusic.local`).
 - Consider QR or NFC setup assistance only after the core provisioning flow is reliable; neither is a current installation requirement.
 
-### Extend GPIO controls and indicators
+### Manage saved Bluetooth connections
 
-- Evaluate a longer GPIO17 hold for forgetting saved Wi-Fi only after defining its recovery and confirmation behavior. The existing three-second hold exclusively requests provisioning.
-
-### Make all card actions phone friendly
-
-- Review every browser-card action for phone use. Apply the Wi-Fi card pattern where appropriate: comfortably sized tap targets, clear separation between adjacent actions, and single-column wrapping on narrow screens. Preserve useful compact layouts on larger screens and do not change action behavior as part of this visual pass.
+- Apply the saved-network management pattern to Bluetooth only after the Wi-Fi version has been proven. It should clearly distinguish paired, trusted, connected, and boot-preferred devices; never remove the active output unexpectedly; and preserve the narrowly scoped preferred-speaker helper boundary.
 
 ## Important boundary
 
-The backlog is planned direction, not evidence of implementation. In particular, the current backend directly invokes `nmcli` for Wi-Fi operations, and the repository's fallback service is a separate loop rather than the proposed shared event-driven state machine. GPIO wiring and its optional user service are implemented; the remaining GPIO item is deliberately limited to evaluating a longer Wi-Fi-forget hold.
+The backlog is planned direction, not evidence of implementation. In particular, the current backend directly invokes `nmcli` for Wi-Fi operations, and the repository's fallback service is a separate loop rather than the proposed shared event-driven state machine. GPIO wiring and its optional user service are implemented; GPIO17 remains dedicated to requesting setup mode, while saved Wi-Fi management is handled explicitly in the web UI.
