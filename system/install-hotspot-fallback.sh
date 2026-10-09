@@ -8,7 +8,8 @@ fi
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 WIFI_DEVICE=${WIFI_DEVICE:-wlan0}
-PREFERRED_CONNECTION=${PREFERRED_CONNECTION:-netplan-wlan0-morrow}
+# Empty means NetworkManager should choose from suitable saved profiles.
+PREFERRED_CONNECTION=${PREFERRED_CONNECTION:-}
 HOTSPOT_CONNECTION=pimusic-setup
 HOTSPOT_SSID=pimusic-setup
 PIMUSIC_USER=${PIMUSIC_USER:-${SUDO_USER:-}}

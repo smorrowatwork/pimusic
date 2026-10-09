@@ -1,16 +1,23 @@
 # PiMusic hotspot fallback
 
-The fallback service first tries `netplan-wlan0-morrow`, then asks NetworkManager
-to activate another suitable saved Wi-Fi profile. If none connects, it starts the
-`pimusic-setup` hotspot. NetworkManager's shared IPv4 mode normally gives the Pi
-the address `10.42.0.1`, so the PiMusic page is usually available at
-`http://10.42.0.1:8000` while the hotspot is active.
+The fallback service asks NetworkManager to activate a suitable saved Wi-Fi
+profile. If none connects, it starts the `pimusic-setup` hotspot. NetworkManager's
+shared IPv4 mode normally gives the Pi the address `10.42.0.1`, so the PiMusic
+page is usually available at `http://10.42.0.1:8000` while the hotspot is active.
+To try one saved profile before the others, set `PREFERRED_CONNECTION` to its
+NetworkManager connection name while installing.
 
 Install on the Pi from the project directory:
 
 ```bash
 chmod +x system/install-hotspot-fallback.sh
 sudo ./system/install-hotspot-fallback.sh
+```
+
+For example, to prefer a profile named `Home Wi-Fi`:
+
+```bash
+sudo PREFERRED_CONNECTION="Home Wi-Fi" ./system/install-hotspot-fallback.sh
 ```
 
 The installer securely prompts for the hotspot password and writes it only to
@@ -57,6 +64,11 @@ helper: `READY` when normal Wi-Fi is connected, `TRYING_WIFI` while fallback is
 looking for a saved network, `PROVISIONING` while the hotspot is active or being
 requested, and `CONNECTING_WIFI` during an explicit web connection attempt.
 
+The card's **Manage Saved Networks** control is available whether or not the
+hotspot is active. It lists saved user Wi-Fi profiles only on request and can
+forget a non-active profile after confirmation. The current connection and the
+internal `pimusic-setup` profile cannot be removed there.
+
 When physical controls are wired, run `chmod +x system/install-gpio-controls.sh`
 then install it as the non-root PiMusic user after this fallback service. Its
 user service owns the GPIO17 provisioning button and the GPIO22/GPIO27 status
@@ -67,8 +79,11 @@ To stop or remove the feature:
 
 ```bash
 sudo systemctl disable --now pimusic-hotspot-fallback.service
-sudo rm /etc/systemd/system/pimusic-hotspot-fallback.service
-sudo rm /usr/local/lib/pimusic/pimusic-hotspot-fallback
+sudo rm -f /etc/systemd/system/pimusic-hotspot-fallback.service
+sudo rm -f /usr/local/lib/pimusic/pimusic-hotspot-fallback
+sudo rm -f /usr/local/bin/pimusic-hotspot-control
+sudo rm -f /etc/sudoers.d/pimusic-hotspot-control
+sudo rm -f /etc/pimusic/hotspot-fallback.conf
 sudo nmcli connection delete pimusic-setup
 sudo systemctl daemon-reload
 ```

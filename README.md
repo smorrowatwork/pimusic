@@ -2,7 +2,7 @@
 
 PiMusic turns a Raspberry Pi Zero 2 W into a headless, browser-controlled music appliance. It streams a [Navidrome](https://www.navidrome.org/) library through MPV and plays audio on the Pi through PipeWire, Bluetooth, USB, HDMI, or another local audio output.
 
-The interface supports search, playlists, album playback, queue reordering, Play Next, Append, Mix into Queue, Shuffle Upcoming, Wi-Fi setup, Bluetooth speaker selection, queue recovery, persistent volume, and an explicit browser listening mode.
+The interface supports search, playlists, album playback, queue reordering, Play Next, Append, Mix into Queue, Shuffle Upcoming, saved Wi-Fi and Bluetooth management, queue recovery, persistent volume, and an explicit browser listening mode.
 
 For durable project context beyond setup and operation, see [architecture](docs/architecture.md), [hardware assumptions](docs/hardware.md), and [development history](docs/development-history.md). Contributors using Codex should start with [AGENTS.md](AGENTS.md).
 
@@ -35,7 +35,7 @@ bluetoothctl show
 
 ```bash
 cd /home/YOUR_USER
-git clone <your-repository-url> pimusic
+git clone https://github.com/smorrowatwork/pimusic.git pimusic
 cd pimusic
 
 python3 -m venv .venv
@@ -59,6 +59,14 @@ NAVIDROME_USER=your_navidrome_user
 NAVIDROME_SALT=your_random_salt
 NAVIDROME_TOKEN=the_matching_token_hash
 ```
+
+For the first installation, generate the salt and matching Subsonic token on the Pi. This command prompts for the password without placing it in shell history; copy its two output values into `pimusic.env`.
+
+```bash
+python3 -c 'import getpass, hashlib, secrets; password = getpass.getpass("Navidrome password: "); salt = secrets.token_hex(16); print(f"NAVIDROME_SALT={salt}"); print(f"NAVIDROME_TOKEN={hashlib.md5((password + salt).encode()).hexdigest()}")'
+```
+
+After PiMusic is running, use the **Music Server** form in **About / System Status** for later library or credential changes. It generates and saves replacement derived credentials automatically.
 
 ### 3. Create user services
 
@@ -120,6 +128,13 @@ systemctl --user status pimusic-mpv.service pimusic-web.service --no-pager
 
 Open `http://<pi-hostname-or-ip>:8000`. The **About / System Status** card shows the current Wi-Fi IP and MPV availability.
 
+### First use
+
+1. If this Pi needs a different music library, expand **About / System Status** and use **Music Server** to validate and switch it.
+2. Expand **Wi-Fi** to scan and join a network, or start the setup hotspot if the optional fallback service is installed.
+3. Expand **Bluetooth**, scan for a new speaker and pair it, then use **Manage Saved Speakers** to select it as the output.
+4. Open a playlist or album and choose **Play**. The first track starts automatically; no queue-row click is needed.
+
 ### GPIO provisioning controls and indicators
 
 After installing the optional fallback hotspot service, install the GPIO user service as the PiMusic user (without `sudo`):
@@ -134,23 +149,23 @@ The provisioning button connects GPIO17 / physical pin 11 to ground. Hold it for
 
 ### 4. Connect audio and use PiMusic
 
-Use the Bluetooth card to scan, pair, trust, connect, and select a speaker. Verify a selected audio output with:
+Open the Bluetooth card and choose **Scan for Speakers** to find new, unpaired speakers. Pairing one adds it to **Manage Saved Speakers**. That manager is where saved speakers can be selected with **Use**, connected with **Connect**, or forgotten. The connected speaker cannot be forgotten. Verify a selected audio output with:
 
 ```bash
 wpctl status -n
 bluetoothctl devices Connected
 ```
 
-To reconnect that selected speaker automatically after a Pi reboot, install the optional constrained helper and system service once:
+Install the constrained helper and system service once to use saved-speaker management and reconnect the selected speaker automatically after a Pi reboot:
 
 ```bash
 chmod +x system/install-bluetooth-reconnect.sh
 sudo ./system/install-bluetooth-reconnect.sh
 ```
 
-The Bluetooth card saves the selected speaker's MAC address through the installed helper. Its **Manage Saved Speakers** control shows paired speakers and their connected, trusted, and boot-reconnect status; it will not forget the currently connected speaker. Forgetting a non-connected boot-preferred speaker also clears that reconnect preference. At boot, the reconnect service waits for BlueZ and retries that device without giving the web service general root or Bluetooth-management access. Each reconnect cycle is bounded to about one minute and retries later if the speaker is unavailable. Test a saved speaker without rebooting with `sudo systemctl start pimusic-bluetooth.service`. Re-run the installer after updating this feature so it can install the saved-speaker management helper.
+The Bluetooth card saves the selected speaker's MAC address through the installed helper. **Manage Saved Speakers** identifies paired, trusted, connected, and boot-reconnect state. Forgetting a non-connected boot-preferred speaker also clears that reconnect preference. At boot, the reconnect service waits for BlueZ and retries that device without giving the web service general root or Bluetooth-management access. Each reconnect cycle is bounded to about one minute and retries later if the speaker is unavailable. Test a saved speaker without rebooting with `sudo systemctl start pimusic-bluetooth.service`. Re-run the installer after updating this feature so it can install any new helper.
 
-Click a song to replace the queue. Album and playlist pages offer **Play**, **Append to Queue**, and **Mix into Queue**. **Shuffle Upcoming** preserves the current track and randomizes only tracks that follow it. Choose **Listen in This Browser** to play the current queue through the controlling device; choose **Play on Pi** to hand it back to the Pi at the same track and position. Only the browser that starts browser listening can hand playback back. A browser may remain in the background while listening; if it stays disconnected for five minutes, playback pauses instead of unexpectedly starting the Pi speaker.
+Click a song to replace the queue. Album and playlist pages offer **Play**, **Append to Queue**, and **Mix into Queue**; **Play** starts the collection's first track automatically. **Shuffle Upcoming** preserves the current track and randomizes only tracks that follow it. Choose **Listen in This Browser** to play the current queue through the controlling device; choose **Play on Pi** to hand it back to the Pi at the same track and position. Only the browser that starts browser listening can hand playback back. A browser may remain in the background while listening; if it stays disconnected for five minutes, playback pauses instead of unexpectedly starting the Pi speaker.
 
 To switch music libraries, expand **About / System Status**, enter the new Navidrome server address, username, and password under **Music Server**, then choose **Validate and Switch Server**. PiMusic generates the Subsonic salt and token on the Pi, validates the connection, and saves only those derived credentials. It then stops playback and clears the queue because its entries belong to the previous library. The password is not saved or returned to the browser.
 
@@ -164,7 +179,15 @@ sudo ./system/install-hotspot-fallback.sh
 sudo systemctl start pimusic-hotspot-fallback.service
 ```
 
+The fallback service tries suitable saved NetworkManager Wi-Fi profiles automatically. To prefer one profile first, pass its name while installing:
+
+```bash
+sudo PREFERRED_CONNECTION="your-networkmanager-profile" ./system/install-hotspot-fallback.sh
+```
+
 Join the configured `pimusic-setup` hotspot and browse to `http://10.42.0.1:8000`. When submitting normal Wi-Fi credentials, PiMusic must leave the setup hotspot, so the browser may lose its connection before it receives a response. Rejoin the normal network and open PiMusic at its hostname or current DHCP address. See [system/README.md](system/README.md) for testing, removal, and preferred-profile configuration.
+
+The Wi-Fi card works outside hotspot mode too. **Manage Saved Networks** lists saved Wi-Fi profiles only when requested and can forget a non-active profile after confirmation. The current Wi-Fi connection and the internal `pimusic-setup` profile are protected. The Wi-Fi password and **Connect** controls appear only after a scanned network has been selected.
 
 ## Architecture / Why These Settings Matter
 
@@ -216,15 +239,16 @@ Navidrome credentials stay in the private environment file and are never sent to
 
 ## Updating and troubleshooting
 
-Validate Python, then restart the backend after an `app.py` change:
+Update the checkout, validate Python, then restart the backend after an `app.py` change:
 
 ```bash
 cd ~/pimusic
+git pull
 .venv/bin/python -m py_compile app.py
 systemctl --user restart pimusic-web.service
 ```
 
-Hard-refresh the browser after changes under `static/`. Check service health with:
+Hard-refresh the browser after changes under `static/`. After an update to a helper or installer in `system/`, rerun its matching installer; for example, `sudo ./system/install-bluetooth-reconnect.sh` refreshes the saved-speaker helpers and their sudo rule. Check service health with:
 
 ```bash
 systemctl --user status pimusic-web.service --no-pager -n 80
@@ -255,5 +279,5 @@ static/index.html       Application markup
 static/app.js           Browser behavior and API calls
 static/style.css        Responsive interface styles
 static/pimusic-icon.png Browser and application icon
-system/                 Optional hotspot fallback service and installer
+system/                 Optional hotspot, Bluetooth reconnect, and GPIO services/installers
 ```
