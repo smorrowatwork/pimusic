@@ -21,3 +21,6 @@ __pycache__/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Local Codex deployment tooling
+.codex/

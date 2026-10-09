@@ -1,4 +1,0 @@
-interface:
-  display_name: "PiMusic Remote Pi"
-  short_description: "Deploy and test PiMusic on its Raspberry Pi"
-  default_prompt: "Use $pimusic-remote-pi to inspect PiMusic on the Raspberry Pi."
