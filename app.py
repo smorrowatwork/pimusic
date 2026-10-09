@@ -45,6 +45,7 @@ queue_state = {
 }
 queue_state_from_v2 = False
 last_persisted_queue_progress = None
+mpv_queue_start_deadline = 0.0
 browser_playback = {
     "mode": "pi",
     "lease": None,
@@ -982,6 +983,7 @@ def queue_snapshot():
 
 def render_queue_to_mpv():
     """Make MPV render the authoritative queue, preserving its playback state."""
+    global mpv_queue_start_deadline
     state = queue_snapshot()
     with mpv_lock:
         # Do not let a replacement playlist briefly play from its beginning
@@ -1006,7 +1008,25 @@ def render_queue_to_mpv():
                             break
                     time.sleep(0.1)
         # Browser output always leaves the Pi renderer silent.
-        mpv_command(["set_property", "pause", True if browser_playback["mode"] == "browser" else state["paused"]])
+        should_pause = browser_playback["mode"] == "browser" or state["paused"]
+        if should_pause:
+            result = mpv_command(["set_property", "pause", True])
+            if result.get("error") != "success":
+                raise HTTPException(status_code=503, detail="Unable to pause the Pi player")
+            return
+
+        # Loading a network stream is asynchronous. MPV can briefly retain the
+        # pause state used while its old playlist was being replaced, so verify
+        # that its final unpause has stuck before reporting playback started.
+        mpv_queue_start_deadline = time.monotonic() + 5
+        for _ in range(10):
+            result = mpv_command(["set_property", "pause", False])
+            if result.get("error") == "success":
+                time.sleep(0.1)
+                if mpv_property("pause") is False:
+                    return
+            time.sleep(0.1)
+        raise HTTPException(status_code=503, detail="MPV did not start the new queue. Try playing it again.")
 
 
 def mpv_queue_song_ids():
@@ -1072,7 +1092,13 @@ def sync_queue_from_mpv():
     if not isinstance(index, int) or not 0 <= index < len(state["items"]):
         return
     position = max(0, float(mpv_property("time-pos") or 0))
-    paused = mpv_property("pause") is True or mpv_property("idle-active") is True
+    idle_active = mpv_property("idle-active") is True
+    # MPV is briefly idle while a newly selected network stream opens. Do not
+    # let the UI's immediate status poll turn that expected startup state into
+    # the canonical paused state.
+    if idle_active and time.monotonic() < mpv_queue_start_deadline:
+        return
+    paused = mpv_property("pause") is True or idle_active
     with queue_lock:
         persisted = last_persisted_queue_progress
         should_persist = (
