@@ -18,12 +18,14 @@ install -d -m 755 /usr/local/lib/pimusic
 install -d -m 755 /etc/pimusic
 install -m 755 "$SCRIPT_DIR/pimusic-set-bluetooth-device" \
   /usr/local/bin/pimusic-set-bluetooth-device
+install -m 755 "$SCRIPT_DIR/pimusic-manage-bluetooth-device" \
+  /usr/local/bin/pimusic-manage-bluetooth-device
 install -m 755 "$SCRIPT_DIR/pimusic-bluetooth-reconnect" \
   /usr/local/lib/pimusic/pimusic-bluetooth-reconnect
 install -m 644 "$SCRIPT_DIR/pimusic-bluetooth.service" \
   /etc/systemd/system/pimusic-bluetooth.service
 
-printf '%s ALL=(root) NOPASSWD: /usr/local/bin/pimusic-set-bluetooth-device\n' "$PIMUSIC_USER" \
+printf '%s ALL=(root) NOPASSWD: /usr/local/bin/pimusic-set-bluetooth-device, /usr/local/bin/pimusic-manage-bluetooth-device\n' "$PIMUSIC_USER" \
   > /etc/sudoers.d/pimusic-set-bluetooth-device
 chmod 440 /etc/sudoers.d/pimusic-set-bluetooth-device
 visudo -cf /etc/sudoers.d/pimusic-set-bluetooth-device

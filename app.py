@@ -99,6 +99,7 @@ PIMUSIC_VERSION = "1.0"
 # legitimately still playing. Keep a bounded safety window rather than
 # treating a brief tab switch as a disconnected listener.
 BROWSER_LEASE_SECONDS = 5 * 60
+BLUETOOTH_ADDRESS_PATTERN = re.compile(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}")
 
 def split_nmcli_fields(line: str):
     fields = []
@@ -551,6 +552,40 @@ def bluetooth_info(address: str):
                 pass
 
     return info
+
+def valid_bluetooth_address(address: str):
+    return bool(BLUETOOTH_ADDRESS_PATTERN.fullmatch(address))
+
+def preferred_bluetooth_address():
+    """Read the root-owned boot-reconnect preference through its narrow helper."""
+    result = subprocess.run(
+        ["sudo", "-n", "/usr/local/bin/pimusic-manage-bluetooth-device", "get"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=503,
+            detail="Saved Bluetooth management is not installed. Re-run sudo ./system/install-bluetooth-reconnect.sh.",
+        )
+    address = result.stdout.strip()
+    if address and not valid_bluetooth_address(address):
+        raise HTTPException(status_code=503, detail="The saved Bluetooth speaker configuration is invalid.")
+    return address.upper() if address else None
+
+def forget_preferred_bluetooth_address(address: str):
+    result = subprocess.run(
+        ["sudo", "-n", "/usr/local/bin/pimusic-manage-bluetooth-device", "forget", address],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=503,
+            detail="Saved Bluetooth management is not installed. Re-run sudo ./system/install-bluetooth-reconnect.sh.",
+        )
 
 def save_volume_state(volume):
     VOLUME_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -2074,10 +2109,74 @@ def list_bluetooth_devices():
         "devices": devices
     }
 
+def saved_bluetooth_devices():
+    preferred_address = preferred_bluetooth_address()
+    result = subprocess.run(
+        ["bluetoothctl", "devices", "Paired"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if result.returncode != 0:
+        raise HTTPException(status_code=503, detail="Unable to read saved Bluetooth speakers")
+
+    devices = []
+    for line in result.stdout.splitlines():
+        parts = line.strip().split(" ", 2)
+        if len(parts) < 3 or parts[0] != "Device" or not valid_bluetooth_address(parts[1]):
+            continue
+        address, fallback_name = parts[1].upper(), parts[2]
+        info = bluetooth_info(address)
+        if not info["audio"] or not info["paired"]:
+            continue
+        devices.append({
+            "address": address,
+            "name": info["name"] or fallback_name,
+            "paired": True,
+            "trusted": info["trusted"],
+            "connected": info["connected"],
+            "preferred": address == preferred_address,
+        })
+    return {"devices": sorted(devices, key=lambda device: device["name"].lower())}
+
+def forget_saved_bluetooth_device(address: str):
+    if not valid_bluetooth_address(address):
+        raise HTTPException(status_code=400, detail="Invalid saved Bluetooth speaker")
+    address = address.upper()
+    device = next(
+        (item for item in saved_bluetooth_devices()["devices"] if item["address"] == address),
+        None,
+    )
+    if device is None:
+        raise HTTPException(status_code=404, detail="Saved Bluetooth speaker not found")
+    if device["connected"]:
+        raise HTTPException(status_code=409, detail="Disconnect or select another speaker before forgetting it")
+
+    # Clear the boot preference first so a failed BlueZ removal cannot cause an
+    # unwanted reconnect on the next boot. The helper changes only this address.
+    forget_preferred_bluetooth_address(address)
+    result = subprocess.run(
+        ["bluetoothctl", "remove", address],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if result.returncode != 0:
+        raise HTTPException(status_code=503, detail="Unable to forget that Bluetooth speaker")
+    return {"status": "forgotten", "name": device["name"]}
+
 
 @app.get("/api/bluetooth/devices")
 def bluetooth_devices():
     return list_bluetooth_devices()
+
+@app.get("/api/bluetooth/saved")
+def bluetooth_saved_devices():
+    return saved_bluetooth_devices()
+
+@app.delete("/api/bluetooth/saved/{address}")
+def bluetooth_forget_device(address: str):
+    return forget_saved_bluetooth_device(address)
 
 
 @app.post("/api/bluetooth/scan")

@@ -1,0 +1,42 @@
+#!/bin/bash
+set -euo pipefail
+
+CONFIG_FILE=/etc/pimusic/bluetooth.conf
+ACTION=${1:-}
+ADDRESS=${2:-}
+saved_address=
+
+case "$ACTION" in
+  get)
+    if [[ $# -ne 1 ]]; then
+      echo "Usage: $0 get | $0 forget AA:BB:CC:DD:EE:FF" >&2
+      exit 2
+    fi
+    if [[ -f "$CONFIG_FILE" ]]; then
+      read -r saved_address < "$CONFIG_FILE" || true
+      if [[ "$saved_address" =~ ^([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}$ ]]; then
+        printf '%s\n' "${saved_address^^}"
+      else
+        echo "Saved Bluetooth configuration is invalid" >&2
+        exit 1
+      fi
+    fi
+    ;;
+  forget)
+    if [[ $# -ne 2 ]] || ! [[ "$ADDRESS" =~ ^([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}$ ]]; then
+      echo "Usage: $0 get | $0 forget AA:BB:CC:DD:EE:FF" >&2
+      exit 2
+    fi
+    ADDRESS=${ADDRESS^^}
+    if [[ -f "$CONFIG_FILE" ]]; then
+      read -r saved_address < "$CONFIG_FILE" || true
+      if [[ "${saved_address^^}" == "$ADDRESS" ]]; then
+        rm -f "$CONFIG_FILE"
+      fi
+    fi
+    ;;
+  *)
+    echo "Usage: $0 get | $0 forget AA:BB:CC:DD:EE:FF" >&2
+    exit 2
+    ;;
+esac

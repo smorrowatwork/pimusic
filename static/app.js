@@ -26,6 +26,7 @@ let playNextPending = false;
 let wifiSetupPending = false;
 let wifiConnectPending = false;
 let savedWifiNetworksExpanded = false;
+let savedBluetoothDevicesExpanded = false;
 let browserLease = sessionStorage.getItem("pimusic-browser-lease");
 let browserSongId = null;
 let browserOutputActive = false;
@@ -159,6 +160,10 @@ function toggleSection(cardId, buttonId) {
   const collapsed = card.classList.toggle("is-collapsed");
   button.textContent = collapsed ? "Expand" : "Collapse";
   button.setAttribute("aria-expanded", String(!collapsed));
+  if (cardId === "bluetooth-controls" && collapsed) {
+    clearBluetoothScanResults();
+    document.getElementById("bluetooth-scan-status").textContent = "";
+  }
 }
 
 async function moveQueueItem(item, target, queueIds) {
@@ -880,7 +885,7 @@ async function scanBluetoothDevices() {
 
   try {
     const data = await apiJson("/api/bluetooth/scan", { method: "POST" });
-    renderBluetoothDevices(data.devices || []);
+    renderBluetoothScanDevices(data.devices || []);
     status.textContent = data.devices?.length
       ? "Scan complete."
       : "No speakers found. Keep the speaker close and in pairing mode, then try again.";
@@ -893,31 +898,95 @@ async function scanBluetoothDevices() {
   }
 }
 
-
-async function loadBluetoothDevices() {
-  const response = await fetch("/api/bluetooth/devices");
-
-  if (!response.ok) {
-    console.error(await response.text());
-    return;
-  }
-
-  const data = await response.json();
-
-  renderBluetoothDevices(data.devices || []);
+function clearBluetoothScanResults() {
+  document.getElementById("bluetooth-device-list").innerHTML = "";
 }
 
+async function toggleSavedBluetoothDevices() {
+  savedBluetoothDevicesExpanded = !savedBluetoothDevicesExpanded;
+  const button = document.getElementById("bluetooth-saved-toggle");
+  const container = document.getElementById("bluetooth-saved-devices");
+  button.setAttribute("aria-expanded", String(savedBluetoothDevicesExpanded));
+  button.textContent = savedBluetoothDevicesExpanded ? "Hide Saved Speakers" : "Manage Saved Speakers";
+  container.hidden = !savedBluetoothDevicesExpanded;
+  if (savedBluetoothDevicesExpanded) await loadSavedBluetoothDevices();
+}
 
-function renderBluetoothDevices(devices) {
+async function loadSavedBluetoothDevices() {
+  const container = document.getElementById("bluetooth-saved-devices");
+  container.textContent = "Loading saved speakers...";
+  try {
+    const data = await apiJson("/api/bluetooth/saved");
+    renderSavedBluetoothDevices(data.devices || []);
+  } catch (error) {
+    container.textContent = error.message;
+  }
+}
+
+function renderSavedBluetoothDevices(devices) {
+  const container = document.getElementById("bluetooth-saved-devices");
+  container.innerHTML = "";
+  if (!devices.length) {
+    container.textContent = "No saved Bluetooth speakers.";
+    return;
+  }
+  for (const device of devices) {
+    const row = document.createElement("div");
+    row.className = "saved-bluetooth-device";
+    const details = document.createElement("div");
+    details.className = "saved-bluetooth-details";
+    const name = document.createElement("div");
+    name.textContent = `${device.name} (${device.address})`;
+    const state = document.createElement("div");
+    state.className = "saved-bluetooth-state";
+    const labels = [];
+    if (device.connected) labels.push("Connected");
+    if (device.trusted) labels.push("Trusted");
+    if (device.preferred) labels.push("Reconnects at boot");
+    state.textContent = labels.length ? labels.join(" · ") : "Paired";
+    details.append(name, state);
+    row.appendChild(details);
+    const useButton = document.createElement("button");
+    useButton.textContent = device.connected ? "Use" : "Connect";
+    useButton.onclick = async () => {
+      await connectBluetoothDevice(device.address);
+    };
+    row.appendChild(useButton);
+    if (!device.connected) {
+      const forget = document.createElement("button");
+      forget.className = "forget-bluetooth-device";
+      forget.textContent = "Forget";
+      forget.onclick = async () => {
+        const warning = device.preferred
+          ? `Forget ${device.name}? It will also stop reconnecting automatically at boot.`
+          : `Forget ${device.name}?`;
+        if (!window.confirm(warning)) return;
+        forget.disabled = true;
+        try {
+          await apiJson(`/api/bluetooth/saved/${encodeURIComponent(device.address)}`, { method: "DELETE" });
+          await loadSavedBluetoothDevices();
+        } catch (error) {
+          showError(error);
+          forget.disabled = false;
+        }
+      };
+      row.appendChild(forget);
+    }
+    container.appendChild(row);
+  }
+}
+
+function renderBluetoothScanDevices(devices) {
   const container = document.getElementById("bluetooth-device-list");
   container.innerHTML = "";
+  const newDevices = devices.filter((device) => !device.paired);
 
-  if (devices.length === 0) {
-    container.textContent = "No Bluetooth devices found.";
+  if (newDevices.length === 0) {
+    container.textContent = "No new speakers found. Use Manage Saved Speakers for paired speakers.";
     return;
   }
 
-  for (const device of devices) {
+  for (const device of newDevices) {
     const row = document.createElement("div");
 
     const label = document.createElement("span");
@@ -928,27 +997,10 @@ function renderBluetoothDevices(devices) {
 
     const button = document.createElement("button");
 
-    if (!device.paired) {
-      button.textContent = "Pair";
-
-      button.onclick = async () => {
-        await pairBluetoothDevice(device.address);
-      };
-
-    } else if (device.connected) {
-      button.textContent = "Use";
-
-      button.onclick = async () => {
-        await connectBluetoothDevice(device.address);
-      };
-
-    } else {
-      button.textContent = "Connect";
-
-      button.onclick = async () => {
-        await connectBluetoothDevice(device.address);
-      };
-    }
+    button.textContent = "Pair";
+    button.onclick = async () => {
+      await pairBluetoothDevice(device.address);
+    };
 
     row.appendChild(label);
     row.appendChild(document.createTextNode(" "));
@@ -966,7 +1018,8 @@ async function pairBluetoothDevice(address) {
       body: JSON.stringify({ address })
     });
     await refreshBluetoothStatus();
-    await loadBluetoothDevices();
+    clearBluetoothScanResults();
+    if (savedBluetoothDevicesExpanded) await loadSavedBluetoothDevices();
   } catch (error) {
     showError(error);
   }
@@ -980,7 +1033,7 @@ async function connectBluetoothDevice(address) {
       body: JSON.stringify({ address })
     });
     await refreshBluetoothStatus();
-    await loadBluetoothDevices();
+    if (savedBluetoothDevicesExpanded) await loadSavedBluetoothDevices();
   } catch (error) {
     showError(error);
   }
@@ -1290,7 +1343,6 @@ async function loadAlbum(albumId, artistId) {
     loadPlaylists();
 
     refreshBluetoothStatus();
-    loadBluetoothDevices();
     refreshWifiStatus();
     refreshWifiSetupStatus();
     setInterval(refreshWifiSetupStatus, 10000);

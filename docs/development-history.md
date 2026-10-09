@@ -14,6 +14,7 @@ This is a concise record of verified project context, not a debugging transcript
 - The setup-hotspot flow has been tested end-to-end. Submitting normal Wi-Fi credentials necessarily removes the setup access point, so the browser must treat a post-submission network loss as expected and direct the user back to normal Wi-Fi. NetworkManager failures are summarized into safe authentication, authorization, availability, or timeout messages; raw command output is not sent to the browser.
 - The constrained hotspot helper now provides a lightweight shared provisioning status: `READY`, `TRYING_WIFI`, `PROVISIONING`, or `CONNECTING_WIFI`. It is derived from NetworkManager and a root-owned runtime marker, and is consumed by the web UI. This is a foundation for the later physical button, not a complete event-driven state machine.
 - The Wi-Fi card can manage saved NetworkManager profiles independently of setup-hotspot mode. It lists profiles only on request, protects the active connection, excludes the internal `pimusic-setup` profile, and forgets other profiles by UUID after confirmation.
+- The Bluetooth card can manage paired audio speakers on request. It exposes paired, trusted, connected, and boot-preferred status, protects the active speaker from removal, clears a removed speaker's boot preference through a constrained helper, then removes its BlueZ pairing.
 - Browser listening is an explicit, leased output mode. MPV remains paused while one browser renders the backend-owned queue through a PiMusic stream proxy; the same persisted position and track are used for queue operations and handoff back to the Pi. Browser volume is local, and an expired five-minute browser lease pauses playback; the window accommodates background-tab timer throttling.
 - The optional Bluetooth reconnect installer saves a selected speaker through one root-owned MAC-validation helper and retries that trusted device at boot. The web service has no broader Bluetooth or root permission.
 - Navidrome server changes take a server address, username, and password from the local web UI; the Pi generates the salt and Subsonic token, validates them, and atomically saves only the derived credentials in the private PiMusic environment file. A successful change is applied only after the active queue has been cleared.
@@ -38,10 +39,6 @@ This is the single list of unimplemented PiMusic features and improvements discu
 - Evolve the current lightweight provisioning status into a durable, event-driven state flow shared by automatic saved-network fallback, the web UI, and future physical controls. It should cover `BOOTING`, `TRYING_WIFI`, `READY`, `PROVISIONING`, and `CONNECTING_WIFI` without competing NetworkManager activation attempts.
 - Provide a phone-friendly captive-portal-style setup experience when the temporary `PiMusic-Setup` access point is active. Normal-network discovery is available through the device hostname's mDNS name (for example, `pimusic.local`).
 - Consider QR or NFC setup assistance only after the core provisioning flow is reliable; neither is a current installation requirement.
-
-### Manage saved Bluetooth connections
-
-- Apply the saved-network management pattern to Bluetooth only after the Wi-Fi version has been proven. It should clearly distinguish paired, trusted, connected, and boot-preferred devices; never remove the active output unexpectedly; and preserve the narrowly scoped preferred-speaker helper boundary.
 
 ## Important boundary
 

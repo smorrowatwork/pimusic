@@ -181,6 +181,10 @@
     <button id="bluetooth-scan-button" onclick="scanBluetoothDevices()">Scan for Speakers</button>
     <span id="bluetooth-scan-status"></span>
   </div>
+  <div class="saved-bluetooth-manager">
+    <button id="bluetooth-saved-toggle" type="button" onclick="toggleSavedBluetoothDevices()" aria-expanded="false">Manage Saved Speakers</button>
+    <div id="bluetooth-saved-devices" hidden></div>
+  </div>
   <div id="bluetooth-device-list"></div>
 </section>
 
