@@ -68,6 +68,9 @@ class QueueMoveRequest(BaseModel):
 class BluetoothDeviceRequest(BaseModel):
     address: str
 
+class BluetoothOutputVolumeRequest(BaseModel):
+    volume: float
+
 class WifiConnectRequest(BaseModel):
     ssid: str
     password: str | None = None
@@ -405,6 +408,53 @@ def hotspot_setup_status(action="status"):
         return json.loads(result.stdout)
     except ValueError as error:
         raise HTTPException(status_code=503, detail="Setup hotspot control returned an invalid status") from error
+
+def bluetooth_sink_id(address: str):
+    mac_fragment = address.replace(":", "_").upper()
+    result = subprocess.run(
+        ["wpctl", "status", "-n"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "Unable to inspect PipeWire outputs")
+
+    pattern = re.compile(rf"(?:^|\s)(\d+)\.\s+bluez_output\.{re.escape(mac_fragment)}")
+    for line in result.stdout.splitlines():
+        match = pattern.search(line)
+        if match:
+            return match.group(1)
+    return None
+
+def bluetooth_output_volume(address: str):
+    sink_id = bluetooth_sink_id(address)
+    if not sink_id:
+        raise RuntimeError(f"Bluetooth audio sink did not appear for {address}")
+    result = subprocess.run(
+        ["wpctl", "get-volume", sink_id],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    match = re.search(r"Volume:\s*([0-9]+(?:\.[0-9]+)?)", result.stdout)
+    if result.returncode != 0 or not match:
+        raise RuntimeError(result.stderr.strip() or "Unable to read Bluetooth output volume")
+    return round(float(match.group(1)) * 100)
+
+def set_bluetooth_output_volume(address: str, volume: float):
+    sink_id = bluetooth_sink_id(address)
+    if not sink_id:
+        raise RuntimeError(f"Bluetooth audio sink did not appear for {address}")
+    result = subprocess.run(
+        ["wpctl", "set-volume", sink_id, f"{volume / 100:.2f}"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "Unable to set Bluetooth output volume")
+    return round(volume)
 
 def switch_bluetooth_output(address: str):
     mac_fragment = address.replace(":", "_").upper()
@@ -2155,6 +2205,14 @@ def saved_bluetooth_devices():
         info = bluetooth_info(address)
         if not info["audio"] or not info["paired"]:
             continue
+        output_volume = None
+        if info["connected"]:
+            try:
+                output_volume = bluetooth_output_volume(address)
+            except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                # A speaker can be connected just before PipeWire publishes its
+                # sink. Keep it manageable and report the level on the next refresh.
+                pass
         devices.append({
             "address": address,
             "name": info["name"] or fallback_name,
@@ -2162,6 +2220,7 @@ def saved_bluetooth_devices():
             "trusted": info["trusted"],
             "connected": info["connected"],
             "preferred": address == preferred_address,
+            "output_volume": output_volume,
         })
     return {"devices": sorted(devices, key=lambda device: device["name"].lower())}
 
@@ -2203,6 +2262,29 @@ def bluetooth_saved_devices():
 @app.delete("/api/bluetooth/saved/{address}")
 def bluetooth_forget_device(address: str):
     return forget_saved_bluetooth_device(address)
+
+@app.post("/api/bluetooth/saved/{address}/output-volume")
+def bluetooth_set_output_volume(address: str, request: BluetoothOutputVolumeRequest):
+    if not valid_bluetooth_address(address):
+        raise HTTPException(status_code=400, detail="Invalid saved Bluetooth speaker")
+    if not 0 <= request.volume <= 100:
+        raise HTTPException(status_code=400, detail="Speaker output level must be between 0 and 100")
+
+    address = address.upper()
+    device = next(
+        (item for item in saved_bluetooth_devices()["devices"] if item["address"] == address),
+        None,
+    )
+    if device is None:
+        raise HTTPException(status_code=404, detail="Saved Bluetooth speaker not found")
+    if not device["connected"]:
+        raise HTTPException(status_code=409, detail="Connect that speaker before adjusting its output level")
+
+    try:
+        volume = set_bluetooth_output_volume(address, request.volume)
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+        raise HTTPException(status_code=503, detail="Unable to adjust that speaker's output level. Try again in a few seconds.") from error
+    return {"status": "ok", "address": address, "volume": volume}
 
 
 @app.post("/api/bluetooth/scan")

@@ -45,10 +45,16 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
 #bluetooth-saved-toggle { min-height: 48px; }
 #bluetooth-saved-devices { display: grid; gap: 8px; margin-top: 10px; }
 #bluetooth-saved-devices[hidden] { display: none; }
-.saved-bluetooth-device { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 0; border-bottom: 1px solid #292c35; }
+.saved-bluetooth-device { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 48px; padding: 8px 0; border-bottom: 1px solid #292c35; }
 .saved-bluetooth-device:last-child { border-bottom: 0; }
-.saved-bluetooth-details { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.saved-bluetooth-details { min-width: 0; overflow-wrap: anywhere; }
 .saved-bluetooth-state { color: #8dd59a; font-size: .9rem; }
+.bluetooth-output-level { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(145px, 1fr) minmax(110px, 2fr) auto; align-items: center; gap: 10px; width: 100%; padding-top: 4px; color: #c8c8d2; font-size: .9rem; }
+.bluetooth-output-level label { display: flex; flex-wrap: wrap; gap: 6px; }
+.bluetooth-output-value { color: #8dd59a; font-weight: 600; }
+.bluetooth-output-level input[type="range"] { width: 100%; accent-color: #8b5cf6; }
+.bluetooth-output-level button { min-height: 44px; }
+.bluetooth-output-unavailable { color: #858995; }
 .forget-bluetooth-device { min-height: 44px; background: rgba(190, 70, 86, .22); }
 .forget-bluetooth-device:hover { background: rgba(220, 88, 105, .32); }
 #wifi-setup-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -155,9 +161,11 @@ input[type="range"] { width: min(100%, 420px); accent-color: #9b6cff; }
   .saved-wifi-details { flex-basis: 100%; }
   .saved-wifi-active, .forget-wifi-network { width: 100%; min-height: 48px; }
   .saved-bluetooth-manager, #bluetooth-saved-toggle { width: 100%; }
-  .saved-bluetooth-device { align-items: stretch; flex-wrap: wrap; }
-  .saved-bluetooth-details { flex-basis: 100%; }
-  .saved-bluetooth-state, .forget-bluetooth-device { width: 100%; min-height: 48px; }
+  .saved-bluetooth-device { grid-template-columns: 1fr; align-items: stretch; }
+  .saved-bluetooth-details, .use-bluetooth-device, .forget-bluetooth-device, .bluetooth-output-level { grid-column: 1; }
+  .saved-bluetooth-state, .use-bluetooth-device, .forget-bluetooth-device { width: 100%; min-height: 48px; }
+  .bluetooth-output-level { grid-template-columns: 1fr; gap: 8px; }
+  .bluetooth-output-level button { width: 100%; min-height: 48px; }
   #wifi-connect-status, #navidrome-config-status { min-height: 1.4em; }
   #navidrome-config-form { width: 100%; max-width: none; gap: 12px; }
   #navidrome-config-form input, #navidrome-config-form button { width: 100%; min-height: 48px; }

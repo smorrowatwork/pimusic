@@ -947,11 +947,54 @@ function renderSavedBluetoothDevices(devices) {
     details.append(name, state);
     row.appendChild(details);
     const useButton = document.createElement("button");
+    useButton.className = "use-bluetooth-device";
     useButton.textContent = device.connected ? "Use" : "Connect";
     useButton.onclick = async () => {
       await connectBluetoothDevice(device.address);
     };
     row.appendChild(useButton);
+    if (device.connected) {
+      const outputLevel = document.createElement("div");
+      outputLevel.className = "bluetooth-output-level";
+      const label = document.createElement("label");
+      label.textContent = "Speaker output level";
+      outputLevel.appendChild(label);
+      if (typeof device.output_volume === "number") {
+        const value = document.createElement("span");
+        value.className = "bluetooth-output-value";
+        value.textContent = `${device.output_volume}%`;
+        label.appendChild(value);
+        const slider = document.createElement("input");
+        slider.type = "range";
+        slider.min = "0";
+        slider.max = "100";
+        slider.step = "1";
+        slider.value = String(device.output_volume);
+        slider.setAttribute("aria-label", `Speaker output level for ${device.name}`);
+        slider.onchange = async () => {
+          const volume = Number(slider.value);
+          if (volume === 100 && !window.confirm("Setting speaker output to 100% may make playback much louder. Continue?")) {
+            slider.value = String(device.output_volume);
+            return;
+          }
+          await setBluetoothOutputVolume(device.address, volume);
+        };
+        const maximum = document.createElement("button");
+        maximum.type = "button";
+        maximum.textContent = "Set to 100%";
+        maximum.onclick = async () => {
+          if (!window.confirm("Setting speaker output to 100% may make playback much louder. Continue?")) return;
+          await setBluetoothOutputVolume(device.address, 100);
+        };
+        outputLevel.append(slider, maximum);
+      } else {
+        const unavailable = document.createElement("span");
+        unavailable.className = "bluetooth-output-unavailable";
+        unavailable.textContent = "Unavailable while the audio output is starting.";
+        outputLevel.appendChild(unavailable);
+      }
+      row.appendChild(outputLevel);
+    }
     if (!device.connected) {
       const forget = document.createElement("button");
       forget.className = "forget-bluetooth-device";
@@ -1036,6 +1079,20 @@ async function connectBluetoothDevice(address) {
     if (savedBluetoothDevicesExpanded) await loadSavedBluetoothDevices();
   } catch (error) {
     showError(error);
+  }
+}
+
+async function setBluetoothOutputVolume(address, volume) {
+  try {
+    await apiJson(`/api/bluetooth/saved/${encodeURIComponent(address)}/output-volume`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ volume })
+    });
+    await loadSavedBluetoothDevices();
+  } catch (error) {
+    showError(error);
+    await loadSavedBluetoothDevices();
   }
 }
 
