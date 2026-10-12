@@ -5,6 +5,11 @@ CONFIG=/etc/pimusic/hotspot-fallback.conf
 FORCE_FILE=/run/pimusic/force-hotspot
 source "$CONFIG"
 
+# A Wi-Fi scan or Bluetooth activity can briefly interrupt the Pi Zero 2 W's
+# shared radio.  Do not turn that transient loss into a disruptive setup AP.
+# Existing installations without this setting retain the safe default.
+: "${FAILURE_GRACE_SECONDS:=120}"
+
 active_connection() {
   nmcli -g GENERAL.CONNECTION device show "$WIFI_DEVICE" 2>/dev/null || true
 }
@@ -40,14 +45,27 @@ hotspot_active() {
   [[ "$(active_connection)" == "$HOTSPOT_CONNECTION" ]]
 }
 
+normal_wifi_lost_at=""
+
 while true; do
   if setup_hotspot_requested; then
+    normal_wifi_lost_at=""
     if ! hotspot_active; then
       activate_hotspot || true
     fi
-  elif ! client_connected && ! hotspot_active; then
+  elif hotspot_active; then
+    # Keep setup clients connected until a user explicitly exits setup mode.
+    normal_wifi_lost_at=""
+  elif client_connected; then
+    normal_wifi_lost_at=""
+  else
+    if [[ -z "$normal_wifi_lost_at" ]]; then
+      normal_wifi_lost_at=$(date +%s)
+    fi
     connect_saved_network
-    if ! client_connected; then
+    if client_connected; then
+      normal_wifi_lost_at=""
+    elif (( $(date +%s) - normal_wifi_lost_at >= FAILURE_GRACE_SECONDS )); then
       activate_hotspot || true
     fi
   fi

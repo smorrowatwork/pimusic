@@ -12,7 +12,7 @@
 - Use systemd user-service lingering so the MPV, PipeWire, and web services have a persistent user session at boot.
 - Select Bluetooth audio through PipeWire (`wpctl`), not `pactl`. Bluetooth sinks use names beginning `bluez_output.`.
 - PipeWire RTKit warnings are not necessarily failures; investigate them when audio is actually failing.
-- If Bluetooth is unreliable, check power throttling first. Wi-Fi power saving on the active NetworkManager profile can be disabled when needed; do not hard-code a profile name.
+- If Bluetooth is unreliable, check power throttling first. The fallback-hotspot installer disables Wi-Fi power saving for all NetworkManager Wi-Fi connections by default; on a system without that optional installer, disable it on the active profile without hard-coding a profile name.
 - The optional fallback hotspot is NetworkManager shared IPv4 and normally presents the Pi at `10.42.0.1`. Its installer keeps the hotspot password in a root-readable NetworkManager connection profile, not in the repository.
 
 See [README.md](../README.md) for installation, audio verification, Wi-Fi power-saving commands, hotspot testing, and troubleshooting.

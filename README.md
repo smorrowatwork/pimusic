@@ -179,7 +179,7 @@ sudo ./system/install-hotspot-fallback.sh
 sudo systemctl start pimusic-hotspot-fallback.service
 ```
 
-The fallback service tries suitable saved NetworkManager Wi-Fi profiles automatically. To prefer one profile first, pass its name while installing:
+The fallback service tries suitable saved NetworkManager Wi-Fi profiles automatically. It waits two minutes, including retries of saved profiles, before enabling the setup hotspot after an unexpected Wi-Fi loss; an explicit **Start Setup Hotspot** request remains immediate. The installer also disables Wi-Fi power saving globally through NetworkManager because the Pi Zero 2 W shares its Wi-Fi and Bluetooth radio. To prefer one profile first, pass its name while installing:
 
 ```bash
 sudo PREFERRED_CONNECTION="your-networkmanager-profile" ./system/install-hotspot-fallback.sh
@@ -222,7 +222,7 @@ The optional `system/install-bluetooth-reconnect.sh` installer provides narrowly
 
 ### Wi-Fi power saving
 
-The Pi Zero 2 W shares its Wi-Fi and Bluetooth radio. If Bluetooth becomes unreliable, first check power with `vcgencmd get_throttled`. Then consider disabling Wi-Fi power saving for the active NetworkManager profile:
+The Pi Zero 2 W shares its Wi-Fi and Bluetooth radio. The fallback-hotspot installer disables Wi-Fi power saving by default for all NetworkManager Wi-Fi connections. On a Pi without that optional installer, first check power with `vcgencmd get_throttled`, then disable it for the active profile:
 
 ```bash
 nmcli -g GENERAL.CONNECTION device show wlan0

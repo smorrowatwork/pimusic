@@ -33,6 +33,9 @@ install -m 755 "$SCRIPT_DIR/pimusic-hotspot-control" \
   /usr/local/bin/pimusic-hotspot-control
 install -m 644 "$SCRIPT_DIR/pimusic-hotspot-fallback.service" \
   /etc/systemd/system/pimusic-hotspot-fallback.service
+install -d -m 755 /etc/NetworkManager/conf.d
+install -m 644 "$SCRIPT_DIR/pimusic-disable-wifi-powersave.conf" \
+  /etc/NetworkManager/conf.d/90-pimusic-disable-wifi-powersave.conf
 
 umask 077
 cat > /etc/pimusic-hotspot.nmconnection <<EOF
@@ -70,6 +73,7 @@ PREFERRED_CONNECTION=${PREFERRED_CONNECTION}
 HOTSPOT_CONNECTION=${HOTSPOT_CONNECTION}
 CONNECT_TIMEOUT=30
 RETRY_INTERVAL=30
+FAILURE_GRACE_SECONDS=120
 EOF
 chmod 600 /etc/pimusic/hotspot-fallback.conf
 
@@ -78,7 +82,15 @@ printf '%s ALL=(root) NOPASSWD: /usr/local/bin/pimusic-hotspot-control\n' "$PIMU
 chmod 440 /etc/sudoers.d/pimusic-hotspot-control
 visudo -cf /etc/sudoers.d/pimusic-hotspot-control
 
+nmcli general reload conf
 nmcli connection reload
+while IFS=: read -r connection_uuid connection_type; do
+  case "$connection_type" in
+    wifi|802-11-wireless)
+      nmcli connection modify uuid "$connection_uuid" 802-11-wireless.powersave 2
+      ;;
+  esac
+done < <(nmcli -t -f UUID,TYPE connection show)
 systemctl daemon-reload
 systemctl enable pimusic-hotspot-fallback.service
 

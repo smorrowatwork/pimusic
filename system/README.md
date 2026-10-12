@@ -4,6 +4,11 @@ The fallback service asks NetworkManager to activate a suitable saved Wi-Fi
 profile. If none connects, it starts the `pimusic-setup` hotspot. NetworkManager's
 shared IPv4 mode normally gives the Pi the address `10.42.0.1`, so the PiMusic
 page is usually available at `http://10.42.0.1:8000` while the hotspot is active.
+After an unexpected normal-Wi-Fi loss, it retries saved profiles for two minutes
+before activating the hotspot. An explicit web or GPIO request for setup mode
+still activates it immediately. The installer also writes a NetworkManager
+default that disables Wi-Fi power saving for all Wi-Fi profiles; this avoids
+shared-radio instability during Bluetooth activity.
 To try one saved profile before the others, set `PREFERRED_CONNECTION` to its
 NetworkManager connection name while installing.
 

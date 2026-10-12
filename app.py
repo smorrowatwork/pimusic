@@ -311,6 +311,18 @@ def connect_wifi(request: WifiConnectRequest):
                 detail=wifi_command_error(created, "Unable to prepare that Wi-Fi connection"),
             )
 
+    power_save = subprocess.run(
+        ["nmcli", "connection", "modify", profile, "802-11-wireless.powersave", "2"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if power_save.returncode != 0:
+        raise HTTPException(
+            status_code=400,
+            detail=wifi_command_error(power_save, "Unable to prepare that Wi-Fi connection"),
+        )
+
     if request.password:
         secured = subprocess.run(
             ["nmcli", "connection", "modify", profile, "wifi-sec.key-mgmt", "wpa-psk"],
