@@ -32,6 +32,9 @@ let browserSongId = null;
 let browserOutputActive = false;
 let browserProgressPending = false;
 let browserRevision = null;
+let statusRefreshPending = false;
+let resumeRefreshPending = false;
+const API_REQUEST_TIMEOUT_MS = 15000;
 
 function showError(error) {
   const message = document.getElementById("app-message");
@@ -42,24 +45,26 @@ function showError(error) {
 }
 
 async function apiJson(url, options) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
   let response;
-  try {
-    response = await fetch(url, options);
-  } catch {
-    const error = new Error("Unable to reach PiMusic. Check the network connection.");
-    error.networkError = true;
-    throw error;
-  }
-  const contentType = response.headers.get("content-type") || "";
   let data;
   try {
+    response = await fetch(url, { ...options, signal: controller.signal });
+    const contentType = response.headers.get("content-type") || "";
     data = contentType.includes("application/json")
       ? await response.json()
       : { detail: await response.text() };
-  } catch {
-    const error = new Error("Unable to reach PiMusic. Check the network connection.");
+  } catch (cause) {
+    const error = new Error(
+      cause?.name === "AbortError"
+        ? "PiMusic did not respond. Check the connection and try again."
+        : "Unable to reach PiMusic. Check the network connection."
+    );
     error.networkError = true;
     throw error;
+  } finally {
+    clearTimeout(timeout);
   }
   if (!response.ok) throw new Error(data.detail || "The request could not be completed.");
   return data;
@@ -657,7 +662,10 @@ browserAudio.addEventListener("pause", () => {
   if (!browserAudio.dataset.loading) reportBrowserProgress();
 });
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) reportBrowserProgress();
+  if (!document.hidden) {
+    reportBrowserProgress();
+    refreshAfterTabResume();
+  }
 });
 setInterval(reportBrowserProgress, 5000);
 
@@ -1290,8 +1298,16 @@ async function loadAlbum(albumId, artistId) {
 }
 
     async function refreshStatus() {
-      const response = await fetch("/api/status");
-      const data = await response.json();
+      if (statusRefreshPending) return false;
+      statusRefreshPending = true;
+      let data;
+      try {
+        data = await apiJson("/api/status");
+      } catch {
+        return false;
+      } finally {
+        statusRefreshPending = false;
+      }
       const player = data.player;
       startBrowserAudio(player);
 
@@ -1345,7 +1361,28 @@ async function loadAlbum(albumId, artistId) {
       } else if (player.volume !== null) {
         volume.value = player.volume;
       }
+      return true;
     }
+
+    async function refreshAfterTabResume() {
+      if (resumeRefreshPending) return;
+      resumeRefreshPending = true;
+      playPauseButton.disabled = true;
+      outputStatus.textContent = "Reconnecting to PiMusic…";
+      try {
+        const refreshed = await refreshStatus();
+        if (!refreshed) {
+          showError(new Error("PiMusic is still reconnecting. Try Play again once the connection returns."));
+        }
+      } finally {
+        playPauseButton.disabled = false;
+        resumeRefreshPending = false;
+      }
+    }
+
+    window.addEventListener("pageshow", (event) => {
+      if (event.persisted) refreshAfterTabResume();
+    });
 
     async function play() {
       try {
