@@ -35,6 +35,7 @@ let browserRevision = null;
 let statusRefreshPending = false;
 let resumeRefreshPending = false;
 const API_REQUEST_TIMEOUT_MS = 15000;
+const BLUETOOTH_SCAN_TIMEOUT_MS = 45000;
 
 function showError(error) {
   const message = document.getElementById("app-message");
@@ -44,9 +45,9 @@ function showError(error) {
   messageTimer = setTimeout(() => { message.hidden = true; }, 6000);
 }
 
-async function apiJson(url, options) {
+async function apiJson(url, options, timeoutMs = API_REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response;
   let data;
   try {
@@ -892,7 +893,11 @@ async function scanBluetoothDevices() {
   status.textContent = "Scanning for speakers (up to 30 seconds)...";
 
   try {
-    const data = await apiJson("/api/bluetooth/scan", { method: "POST" });
+    const data = await apiJson(
+      "/api/bluetooth/scan",
+      { method: "POST" },
+      BLUETOOTH_SCAN_TIMEOUT_MS
+    );
     renderBluetoothScanDevices(data.devices || []);
     status.textContent = data.devices?.length
       ? "Scan complete."

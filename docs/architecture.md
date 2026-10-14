@@ -30,7 +30,7 @@ Navidrome                         persistent MPV process
 
 ### Browser/UI responsibilities
 
-The vanilla JavaScript client calls `/api/*` endpoints for playback, queue editing, library browsing, Wi-Fi, Bluetooth, and system status. It polls player status every second, refreshes it when a backgrounded tab returns, and temporarily disables Play with a reconnecting status while that refresh completes. API requests are bounded so a stale browser connection reports a retryable error rather than leaving an action pending indefinitely. During setup-hotspot handoff, it treats loss of the browser connection after submission as an expected outcome and tells the user to rejoin normal Wi-Fi; confirmed API failures remain visible as specific messages. The UI is served from the same FastAPI process, which mounts `static/` at `/`.
+The vanilla JavaScript client calls `/api/*` endpoints for playback, queue editing, library browsing, Wi-Fi, Bluetooth, and system status. It polls player status every second, refreshes it when a backgrounded tab returns, and temporarily disables Play with a reconnecting status while that refresh completes. API requests are bounded so a stale browser connection reports a retryable error rather than leaving an action pending indefinitely; Bluetooth discovery receives a longer deadline because it intentionally scans for up to 30 seconds. During setup-hotspot handoff, it treats loss of the browser connection after submission as an expected outcome and tells the user to rejoin normal Wi-Fi; confirmed API failures remain visible as specific messages. The UI is served from the same FastAPI process, which mounts `static/` at `/`.
 
 ### Services and privileged boundary
 
